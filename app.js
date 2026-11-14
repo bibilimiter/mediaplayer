@@ -1,7 +1,7 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v1';  // 画面を直したら、sw.js の VERSION といっしょに上げる
+const APP_VERSION = 'v2';  // 画面を直したら、sw.js の VERSION といっしょに上げる
 
 const $ = (id) => document.getElementById(id);
 const VIDEO_RE = /\.(mp4|m4v|mov|webm)$/i;
@@ -112,6 +112,30 @@ const once = (el, names, ms) => new Promise((ok, ng) => {
   for (const n of list) el.addEventListener(n, onOk);
   el.addEventListener('error', onNg);
 });
+// 動画の今の場面を絵にする。まっ黒な場面（または、まだ絵が出ていない）ときは '' を返す
+function grabFrame(v) {
+  if (!v.videoWidth) return '';
+  try {
+    const s = document.createElement('canvas');
+    s.width = 32; s.height = 18;
+    const sx = s.getContext('2d', { willReadFrequently: true });
+    sx.drawImage(v, 0, 0, 32, 18);
+    const px = sx.getImageData(0, 0, 32, 18).data;
+    let sum = 0;
+    for (let i = 0; i < px.length; i += 4) sum += px[i] * 0.3 + px[i + 1] * 0.6 + px[i + 2] * 0.1;
+    if (sum / (px.length / 4) < 14) return '';
+    const c = document.createElement('canvas');
+    c.width = THUMB_W; c.height = Math.max(1, Math.round(THUMB_W * v.videoHeight / v.videoWidth));
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.75);
+  } catch (e) { return ''; }
+}
+// 場面を移したあと、絵が出てくるのを少し待つ
+const frameReady = (v) => new Promise((ok) => {
+  const t = setTimeout(ok, 400);
+  if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => { clearTimeout(t); ok(); });
+});
+
 // 動画を一度開いて、長さを調べ、棚の絵を作る。再生できない形式なら、ここでわかる
 async function probe(file) {
   const v = document.createElement('video');
@@ -127,13 +151,15 @@ async function probe(file) {
     try {
       // iPad は、少し再生しないと絵が出てこないことがある（音を消してあるので、自動で再生できる）
       try { await v.play(); v.pause(); } catch (e) { }
-      const at = Math.min(info.duration * 0.1, 60);
-      if (at > 0.1) { v.currentTime = at; await once(v, 'seeked', 10000); }
-      else if (v.readyState < 2) await once(v, 'loadeddata', 10000);
-      const c = document.createElement('canvas');
-      c.width = THUMB_W; c.height = Math.max(1, Math.round(THUMB_W * info.h / info.w));
-      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-      info.thumb = c.toDataURL('image/jpeg', 0.75);
+      // はじめの方は黒い画面のことが多いので、場所を変えながら、絵が出る所を探す
+      for (const r of [0.1, 0.25, 0.5]) {
+        const at = info.duration * r;
+        if (at > 0.1) { v.currentTime = at; await once(v, 'seeked', 10000); }
+        else if (v.readyState < 2) await once(v, 'loadeddata', 10000);
+        await frameReady(v);
+        info.thumb = grabFrame(v);
+        if (info.thumb || !info.duration) break;
+      }
     } catch (e) { }   // 絵が作れなくても、取りこみは続ける
     return info;
   } finally {
@@ -165,7 +191,7 @@ async function importFiles(files) {
         show('取りこんでいます 0%', 0);
         const store = await saveBody(id, f, (p) => show('取りこんでいます ' + Math.floor(p * 100) + '%', p));
         const meta = { id, name: baseName(f.name), file: f.name, size: f.size, type: f.type || 'video/mp4', added: Date.now(),
-          duration: info.duration, w: info.w, h: info.h, thumb: info.thumb, store };
+          duration: info.duration, w: info.w, h: info.h, thumb: info.thumb, thumbOk: !!info.thumb, store };
         try { await dbPut('videos', id, meta); }
         catch (e) { await deleteBody(meta); throw e; }
       } catch (e) {
@@ -281,7 +307,7 @@ async function openPlayer(meta) {
   $('title').textContent = meta.name;
   $('library').hidden = true; $('player').hidden = false;
   $('loading').hidden = false;
-  $('fullBtn').hidden = !(document.fullscreenEnabled || document.webkitFullscreenEnabled) || isStandalone();
+  $('fullBtn').hidden = !(document.fullscreenEnabled || document.webkitFullscreenEnabled) || isStandalone() || appleTouch;
   video.playbackRate = SPEEDS[speedIx];
   const pos = loadJson('mp_pos_' + meta.id, null);
   const startAt = pos && !pos.done && pos.t > 5 ? pos.t : 0;
@@ -311,11 +337,23 @@ function closePlayer() {
   $('player').hidden = true; $('library').hidden = false;
   renderLibrary();
 }
+const appleTouch = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 
 video.addEventListener('play', () => { updatePlayBtn(); showCtl(); });
 video.addEventListener('pause', () => { updatePlayBtn(); showCtl(true); if (cur) savePos(false); });
-video.addEventListener('timeupdate', () => { updateTime(); if (Date.now() - lastSave > 3000) savePos(false); });
+video.addEventListener('timeupdate', () => { updateTime(); if (Date.now() - lastSave > 3000) savePos(false); fixThumb(); });
+// 取りこんだときに棚の絵が作れなかった動画は、再生している間に絵を作り直す（iPad は、再生中でないと絵が取れない動画がある）
+let lastThumbTry = 0;
+function fixThumb() {
+  const m = cur;
+  if (!m || m.thumbOk || video.paused || video.currentTime < 1 || Date.now() - lastThumbTry < 2000) return;
+  lastThumbTry = Date.now();
+  const th = grabFrame(video);
+  if (!th) return;
+  m.thumb = th; m.thumbOk = true;
+  dbPut('videos', m.id, m).catch(() => { });
+}
 video.addEventListener('durationchange', updateTime);
 video.addEventListener('waiting', () => { $('loading').hidden = false; });
 video.addEventListener('canplay', () => { $('loading').hidden = true; });
@@ -366,6 +404,34 @@ $('stage').addEventListener('click', (ev) => {
 $('ctl').addEventListener('click', (ev) => { if (ev.target === $('ctl')) $('stage').dispatchEvent(new MouseEvent('click', { clientX: ev.clientX, clientY: ev.clientY })); });
 $('player').addEventListener('mousemove', () => { if (!$('player').hidden) showCtl(); });
 
+// 2本の指で同時に1回押すと、再生／一時停止（画面のどこでもよい）
+let two = null;
+$('player').addEventListener('touchstart', (ev) => {
+  if (ev.touches.length === 2) two = { at: Date.now(), x: ev.touches[0].clientX, y: ev.touches[0].clientY, x2: ev.touches[1].clientX, y2: ev.touches[1].clientY, moved: false };
+  else if (ev.touches.length > 2) two = null;
+}, { passive: true });
+$('player').addEventListener('touchmove', (ev) => {
+  if (!two || ev.touches.length < 2) return;
+  const a = ev.touches[0], b = ev.touches[1];
+  if (Math.hypot(a.clientX - two.x, a.clientY - two.y) > 24 || Math.hypot(b.clientX - two.x2, b.clientY - two.y2) > 24) two.moved = true;
+}, { passive: true });
+$('player').addEventListener('touchend', (ev) => {
+  if (!two || ev.touches.length) return;
+  const ok = !two.moved && Date.now() - two.at < 500;
+  two = null;
+  if (!ok) return;
+  ev.preventDefault();   // このあとに「1回押した」あつかいにならないように
+  const willPlay = video.paused;
+  togglePlay();
+  flashMark(willPlay ? '▶ 再生' : '⏸ 一時停止');
+});
+$('player').addEventListener('touchcancel', () => { two = null; });
+function flashMark(text) {
+  const mk = $('skipMark');
+  mk.textContent = text; mk.className = 'skipmark mid'; mk.hidden = false;
+  clearTimeout(skip.timer); skip.timer = setTimeout(() => { mk.hidden = true; }, 700);
+}
+
 // Windows：スペースで再生／一時停止、← → で10秒もどる／すすむ、Esc で棚へ
 document.addEventListener('keydown', (ev) => {
   if ($('player').hidden) return;
@@ -379,6 +445,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && cur
 window.addEventListener('pagehide', () => { if (cur) savePos(false); });
 
 // ---------------- はじめ ----------------
+if (appleTouch && isStandalone()) document.documentElement.classList.add('iosapp');
 $('ver').textContent = 'MediaPlayer ' + APP_VERSION;
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   navigator.serviceWorker.register('sw.js').catch(() => { });

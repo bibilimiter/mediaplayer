@@ -68,3 +68,6 @@ body { -webkit-text-size-adjust: 100%; user-select: none; -webkit-user-select: n
 .skipmark { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,.6); padding: 14px 20px; border-radius: 40px;
   font-size: 18px; pointer-events: none; }
 .skipmark.left { left: 12%; } .skipmark.right { right: 12%; }
+.skipmark.mid { left: 50%; top: 24%; transform: translate(-50%, -50%); }
+/* iPhone・iPad のホーム画面から開いたとき：時計の下のぼかしに文字やボタンがかからないよう、少し下げる */
+html.iosapp { --topx: 40px; }
