@@ -1,7 +1,7 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v5';
+const APP_VERSION = 'v6';
 
 // 再生／一時停止のマーク（絵文字だと iPad で色つきの四角になるので、自分で描く）
 const ICON_PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -391,15 +391,29 @@ function buildSpeedList() {
     b.textContent = v.toFixed(1);
     b.onclick = (ev) => {
       ev.stopPropagation();
-      speed = v; video.defaultPlaybackRate = v; video.playbackRate = v; saveJson('mp_speed', v);
-      setSpeedLabel(); closeSpeed(); showCtl();
+      setSpeed(v); closeSpeed(); showCtl();
     };
     box.appendChild(b);
   }
 }
 function closeSpeed() { $('speedPanel').hidden = true; }
+// 「速さ」を長押しすると、1回で 1.0 倍にもどす
+let speedHold = 0, speedHeld = false;
+function setSpeed(v) { speed = v; video.defaultPlaybackRate = v; video.playbackRate = v; saveJson('mp_speed', v); setSpeedLabel(); }
+$('speedBtn').addEventListener('pointerdown', () => {
+  speedHeld = false;
+  clearTimeout(speedHold);
+  speedHold = setTimeout(() => {
+    speedHeld = true;
+    setSpeed(1); closeSpeed(); showCtl();
+    flashMark('速さ 1.0');
+  }, 600);
+});
+for (const n of ['pointerup', 'pointerleave', 'pointercancel']) $('speedBtn').addEventListener(n, () => clearTimeout(speedHold));
+$('speedBtn').addEventListener('contextmenu', (ev) => ev.preventDefault());   // 長押しでメニューが出ないように
 $('speedBtn').onclick = (ev) => {
   ev.stopPropagation();
+  if (speedHeld) { speedHeld = false; return; }   // 長押しのあとは、一覧を出さない
   if (!$('speedPanel').hidden) { closeSpeed(); showCtl(); return; }
   buildSpeedList();
   $('speedPanel').hidden = false;

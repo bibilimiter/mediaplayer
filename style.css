@@ -71,6 +71,7 @@ body { -webkit-text-size-adjust: 100%; user-select: none; -webkit-user-select: n
 .ic { width: 1.25em; height: 1.25em; fill: currentColor; display: block; }
 .btn.round { display: inline-flex; align-items: center; justify-content: center; }
 .skipmark.mid { display: flex; align-items: center; gap: 6px; }
+#speedBtn { -webkit-touch-callout: none; touch-action: manipulation; }
 .speedpanel { position: absolute; right: max(16px, env(safe-area-inset-right)); top: calc(max(10px, calc(env(safe-area-inset-top) + var(--topx))) + 52px);
   background: rgba(17,24,39,.95); border: 1px solid var(--line); border-radius: 12px; padding: 12px; width: min(320px, calc(100vw - 32px)); z-index: 6; }
 .sphead { font-size: 14px; color: var(--sub); margin-bottom: 8px; }
