@@ -21,8 +21,9 @@
   <header class="bar">
     <h1>MediaPlayer</h1>
     <span class="grow"></span>
+    <button id="folderNew" class="btn" title="動画を分けて入れるフォルダを作る">＋ フォルダ</button>
     <label class="btn primary" for="fileInput">＋ 動画を取りこむ</label>
-    <input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.m4v,.mov" multiple hidden>
+    <input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.m4v,.mov,.srt,.vtt" multiple hidden>
   </header>
   <div id="importBar" class="notice" hidden>
     <span id="importText" class="grow"></span>
@@ -32,10 +33,27 @@
     <span id="msgText" class="grow"></span>
     <button id="msgClose" class="btn">閉じる</button>
   </div>
+  <div id="folderBar" class="fbar" hidden>
+    <button id="folderUp" class="btn">‹ 棚</button>
+    <strong id="folderName" class="grow"></strong>
+    <button id="folderRename" class="btn">名前を変える</button>
+    <button id="folderDel" class="btn del">フォルダをなくす</button>
+  </div>
+  <div id="contWrap" hidden>
+    <h2 class="shead">続きを見る</h2>
+    <div id="contRow" class="crow"></div>
+    <h2 class="shead">すべての動画</h2>
+  </div>
   <p id="libHint" class="hint" hidden></p>
   <div id="videos" class="videos"></div>
   <p id="storage" class="small"></p>
   <p id="ver" class="small"></p>
+  <div id="moveDlg" class="dlgback" hidden>
+    <div class="dlg">
+      <div class="drow"><strong id="moveTitle" class="grow"></strong><button id="moveClose" class="btn">✕</button></div>
+      <div id="moveList" class="plist"></div>
+    </div>
+  </div>
 </section>
 
 <!-- 再生する画面 -->
@@ -43,6 +61,7 @@
   <div id="stage">
     <video id="video" playsinline webkit-playsinline preload="metadata"></video>
   </div>
+  <div id="subText" class="subtext" hidden></div>
   <div id="skipMark" class="skipmark" hidden></div>
   <div id="volMark" class="volmark" hidden>
     <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
@@ -54,14 +73,33 @@
     <header class="bar overlay top">
       <button id="back" class="btn">‹ 棚</button>
       <span id="title" class="title"></span>
-      <button id="speedBtn" class="btn" title="再生の速さ">速さ：1.0</button>
+      <button id="airBtn" class="btn icon" title="テレビに映す（AirPlay）" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12h-4v-2h2V6H5v8h2v2H3zM12 13l6 7H6z"/></svg></button>
+      <button id="pipBtn" class="btn icon" title="小さい画面で見る" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v16H2zm2 2v12h16V6zm7 5h8v6h-8z"/></svg></button>
+      <button id="subBtn" class="btn" title="字幕と音声">字幕・音声</button>
+      <button id="speedBtn" class="btn" title="再生の速さ（長押しで 1.0 にもどす）">速さ：1.0</button>
       <button id="fullBtn" class="btn" title="画面いっぱい" hidden>⛶</button>
     </header>
     <div id="speedPanel" class="speedpanel" hidden>
       <div class="sphead">再生の速さ</div>
       <div id="speedList" class="splist"></div>
     </div>
+    <div id="subPanel" class="speedpanel" hidden>
+      <div class="sphead">字幕</div>
+      <div id="subList" class="plist"></div>
+      <label class="btn addsub" for="subInput">＋ 字幕ファイルを足す（.srt / .vtt）</label>
+      <input id="subInput" type="file" hidden>
+      <div class="sphead">字幕の大きさ</div>
+      <div id="subSizeList" class="splist three"></div>
+      <div id="audioBox" hidden>
+        <div class="sphead">音声</div>
+        <div id="audioList" class="plist"></div>
+      </div>
+    </div>
     <footer class="bar overlay bottom">
+      <div id="seekPrev" class="seekprev" hidden>
+        <video id="prevVideo" muted playsinline webkit-playsinline preload="auto"></video>
+        <span id="prevTime">0:00</span>
+      </div>
       <div class="seekrow">
         <span id="timeNow" class="time">0:00</span>
         <input id="seek" type="range" min="0" max="1000" value="0" aria-label="位置">
