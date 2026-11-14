@@ -1,7 +1,7 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v8';
+const APP_VERSION = 'v9';
 
 // 再生／一時停止のマーク（絵文字だと iPad で色つきの四角になるので、自分で描く）
 const ICON_PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -625,7 +625,7 @@ $('player').addEventListener('touchcancel', () => { two = null; });
 function flashMark(text) {
   const mk = $('skipMark');
   mk.innerHTML = text; mk.className = 'skipmark mid'; mk.hidden = false;
-  clearTimeout(skip.timer); skip.timer = setTimeout(() => { mk.hidden = true; }, 700);
+  clearTimeout(skip.timer); skip.timer = setTimeout(() => { mk.hidden = true; }, text.length > 30 ? 4000 : 700);
 }
 
 // ---------------- 字幕 ----------------
@@ -816,12 +816,20 @@ function exitPip() {
     else if (video.webkitPresentationMode === 'picture-in-picture') video.webkitSetPresentationMode('inline');
   } catch (e) { }
 }
+// iPad・iPhone は Safari 専用の呼び方（webkitSetPresentationMode）の方が確実なので、先に使う
+// 押したその場で呼ばないと断られるので、待たずに呼ぶ。1.5秒たっても小さくならなければ、わけを出す
 $('pipBtn').onclick = (ev) => {
   ev.stopPropagation();
   if (inPip()) { exitPip(); return; }
-  if (video.requestPictureInPicture && document.pictureInPictureEnabled) {
-    video.requestPictureInPicture().catch(() => { try { video.webkitSetPresentationMode('picture-in-picture'); } catch (e) { } });
-  } else { try { video.webkitSetPresentationMode('picture-in-picture'); } catch (e) { } }
+  let err = '';
+  try {
+    if (video.webkitSupportsPresentationMode && video.webkitSupportsPresentationMode('picture-in-picture')) video.webkitSetPresentationMode('picture-in-picture');
+    else if (video.requestPictureInPicture) video.requestPictureInPicture().catch((e) => { err = (e && e.name) || 'Error'; });
+  } catch (e) { err = (e && e.name) || 'Error'; }
+  setTimeout(() => {
+    if (inPip()) return;
+    flashMark('小さい画面にできませんでした' + (err ? '（' + err + '）' : '') + (isStandalone() ? '（ホーム画面から開いたとき）' : '（Safari）') + (actx ? '・音量の変更あり' : ''));
+  }, 1500);
 };
 if (window.WebKitPlaybackTargetAvailabilityEvent) {
   video.addEventListener('webkitplaybacktargetavailabilitychanged', (ev) => { $('airBtn').hidden = ev.availability !== 'available'; });

@@ -129,3 +129,4 @@ html.iosapp { --topx: 40px; }
 .seekprev.noimg { width: 90px; border-width: 1px; }
 .seekprev.noimg video { display: none; }
 .seekprev.noimg span { position: static; display: block; }
+.skipmark.mid { max-width: 90vw; text-align: center; }
