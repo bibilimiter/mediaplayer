@@ -1,6 +1,6 @@
 // MediaPlayer のサービスワーカー：画面の部品をしまっておき、ネットがなくても開けるようにする
 // 画面の部品を直したときは、VERSION の数を上げる（新しいものに入れかわる）
-const VERSION = 'mp-v6';
+const VERSION = 'mp-v7';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'store-worker.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-180.png'];
 
 self.addEventListener('install', (e) => {

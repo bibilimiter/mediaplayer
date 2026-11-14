@@ -1,7 +1,7 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v6';
+const APP_VERSION = 'v7';
 
 // 再生／一時停止のマーク（絵文字だと iPad で色つきの四角になるので、自分で描く）
 const ICON_PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -293,7 +293,7 @@ function updateTime() {
   $('timeAll').textContent = fmtTime(d);
   if (!seeking) $('seek').value = d ? Math.round(video.currentTime / d * 1000) : 0;
 }
-function togglePlay() { if (video.paused) video.play().catch(() => { }); else video.pause(); }
+function togglePlay() { ensureAudio(); if (video.paused) video.play().catch(() => { }); else video.pause(); }
 function skip(sec) {
   if (!video.duration) return;
   video.currentTime = Math.max(0, Math.min(video.duration - 0.5, video.currentTime + sec));
@@ -326,6 +326,7 @@ async function openPlayer(meta) {
     updateTime();
   });
   updatePlayBtn(); updateTime(); showCtl(true);
+  ensureAudio();
   video.play().catch(() => { });   // 自動で始まらないブラウザでは、▶ を押してもらう
   if ('mediaSession' in navigator) {
     try {
@@ -439,6 +440,7 @@ seekEl.addEventListener('change', () => { seeking = false; showCtl(); });
 const DOUBLE_MS = 320;
 let tapTimer = 0, lastTap = 0, lastSide = 0;
 $('stage').addEventListener('click', (ev) => {
+  if (Date.now() - volSwipeEnd < 500) return;   // 上下になぞって音量を変えたあとの「押した」は、なかったことにする
   if (!$('speedPanel').hidden) { closeSpeed(); showCtl(); return; }   // 速さの一覧が出ているときは、閉じるだけ
   const now = Date.now();
   const side = ev.clientX < window.innerWidth / 2 ? -1 : 1;
@@ -495,9 +497,83 @@ function flashMark(text) {
   clearTimeout(skip.timer); skip.timer = setTimeout(() => { mk.hidden = true; }, 700);
 }
 
-// Windows：スペースで再生／一時停止、← → で10秒もどる／すすむ、Esc で棚へ
+// ---------------- 音量 ----------------
+// iPad・iPhone の Safari は、ページから動画の音量（video.volume）を変えられない（いつも最大のまま）
+// そこで、動画の音を「音の通り道」（Web Audio）に通し、とちゅうの音量つまみ（gain）で小さくする
+// 100% が iPad 本体の音量と同じ大きさ。本体の音量ボタンも、いつもどおり使える
+let vol = loadJson('mp_vol', 1);
+if (!(vol >= 0 && vol <= 1)) vol = 1;
+let actx = null, gainNode = null;
+function ensureAudio() {   // 指で操作したとき（再生ボタンなど）に呼ぶ。iPad は、そのときでないと音を出す準備ができない
+  if (actx) { if (actx.state !== 'running') actx.resume().catch(() => { }); return; }
+  if (vol >= 1 && !ensureAudio.need) return;   // 音量を変えたことがなければ、ふつうのまま再生する（いちばん安全）
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    // 消音スイッチ（サイレント）のときでも、動画の音が出るように
+    if (navigator.audioSession) { try { navigator.audioSession.type = 'playback'; } catch (e) { } }
+    actx = new AC();
+    gainNode = actx.createGain();
+    gainNode.gain.value = vol;
+    actx.createMediaElementSource(video).connect(gainNode);
+    gainNode.connect(actx.destination);
+    if (actx.state !== 'running') actx.resume().catch(() => { });
+  } catch (e) { actx = null; gainNode = null; }
+}
+function setVol(v, show) {
+  vol = Math.max(0, Math.min(1, Math.round(v * 100) / 100));
+  saveJson('mp_vol', vol);
+  ensureAudio.need = true;
+  ensureAudio();
+  if (gainNode) gainNode.gain.setTargetAtTime(vol, actx.currentTime, 0.02);
+  else video.volume = vol;   // Web Audio が使えないブラウザ（iPad では効かない）
+  if (show) showVol();
+}
+function showVol() {
+  const pct = Math.round(vol * 100);
+  $('volFill').style.height = pct + '%';
+  $('volNum').textContent = pct === 0 ? '消音' : pct + '%';
+  $('volMark').hidden = false;
+  clearTimeout(showVol.timer); showVol.timer = setTimeout(() => { $('volMark').hidden = true; }, 900);
+}
+video.addEventListener('play', ensureAudio);
+// iPad は、指をはなしたときでないと音の準備（resume）が効かないことがあるので、そのたびに確かめる
+for (const n of ['touchend', 'click']) $('player').addEventListener(n, () => { if (actx && actx.state !== 'running') actx.resume().catch(() => { }); }, { capture: true });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && actx && actx.state !== 'running') actx.resume().catch(() => { }); });
+
+// 1本の指で上へなぞると音量を上げ、下へなぞると下げる（画面のどこでもよい）。画面の高さの半分で 0%→100%
+let vs = null, volSwipeEnd = 0;
+$('stage').addEventListener('touchstart', (ev) => {
+  if (ev.touches.length !== 1) { vs = null; return; }
+  const t = ev.touches[0];
+  vs = { x: t.clientX, y: t.clientY, v: vol, on: false };
+}, { passive: true });
+$('stage').addEventListener('touchmove', (ev) => {
+  if (!vs) return;
+  if (ev.touches.length !== 1) { vs = null; return; }
+  const t = ev.touches[0], dx = t.clientX - vs.x, dy = t.clientY - vs.y;
+  if (!vs.on) {
+    if (Math.abs(dy) < 14) return;
+    if (Math.abs(dx) > Math.abs(dy)) { vs = null; return; }   // 横に動かしたときは、音量にしない
+    vs.on = true; vs.y = t.clientY;
+  }
+  ev.preventDefault();
+  setVol(vs.v - (t.clientY - vs.y) / (window.innerHeight * 0.5), true);
+}, { passive: false });
+$('stage').addEventListener('touchend', () => { if (vs && vs.on) volSwipeEnd = Date.now(); vs = null; });
+$('stage').addEventListener('touchcancel', () => { if (vs && vs.on) volSwipeEnd = Date.now(); vs = null; });
+// Windows：マウスのホイールでも音量を変えられる
+$('player').addEventListener('wheel', (ev) => {
+  if ($('player').hidden || !$('speedPanel').hidden) return;
+  ev.preventDefault();
+  setVol(vol + (ev.deltaY < 0 ? 0.05 : -0.05), true);
+}, { passive: false });
+
+// Windows：スペースで再生／一時停止、← → で10秒もどる／すすむ、↑ ↓ で音量、Esc で棚へ
 document.addEventListener('keydown', (ev) => {
   if ($('player').hidden) return;
+  if (ev.key === 'ArrowUp') { ev.preventDefault(); setVol(vol + 0.05, true); return; }
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); setVol(vol - 0.05, true); return; }
   if (ev.key === ' ') { ev.preventDefault(); togglePlay(); }
   else if (ev.key === 'ArrowLeft') { ev.preventDefault(); skip(-10); showCtl(); }
   else if (ev.key === 'ArrowRight') { ev.preventDefault(); skip(10); showCtl(); }
