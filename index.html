@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MediaPlayer</title>
+<meta name="theme-color" content="#1f2937">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediaPlayer">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 動画の棚 -->
+<section id="library" class="view">
+  <header class="bar">
+    <h1>MediaPlayer</h1>
+    <span class="grow"></span>
+    <label class="btn primary" for="fileInput">＋ 動画を取りこむ</label>
+    <input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.m4v,.mov" multiple hidden>
+  </header>
+  <div id="importBar" class="notice" hidden>
+    <span id="importText" class="grow"></span>
+    <div class="prog"><i id="importProg"></i></div>
+  </div>
+  <div id="msgBar" class="notice warn" hidden>
+    <span id="msgText" class="grow"></span>
+    <button id="msgClose" class="btn">閉じる</button>
+  </div>
+  <p id="libHint" class="hint" hidden></p>
+  <div id="videos" class="videos"></div>
+  <p id="storage" class="small"></p>
+  <p id="ver" class="small"></p>
+</section>
+
+<!-- 再生する画面 -->
+<section id="player" class="view" hidden>
+  <div id="stage">
+    <video id="video" playsinline webkit-playsinline preload="metadata"></video>
+  </div>
+  <div id="skipMark" class="skipmark" hidden></div>
+  <div id="loading" class="loading" hidden>読みこんでいます…</div>
+  <div id="ctl">
+    <header class="bar overlay top">
+      <button id="back" class="btn">‹ 棚</button>
+      <span id="title" class="title"></span>
+      <button id="speedBtn" class="btn" title="再生の速さ">速さ：1.0</button>
+      <button id="fullBtn" class="btn" title="画面いっぱい" hidden>⛶</button>
+    </header>
+    <div class="center">
+      <button id="back10" class="btn round" aria-label="10秒もどる">−10</button>
+      <button id="play" class="btn round big primary" aria-label="再生">▶</button>
+      <button id="fwd10" class="btn round" aria-label="10秒すすむ">＋10</button>
+    </div>
+    <footer class="bar overlay bottom">
+      <span id="timeNow" class="time">0:00</span>
+      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="位置">
+      <span id="timeAll" class="time">0:00</span>
+    </footer>
+  </div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>
