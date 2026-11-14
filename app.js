@@ -1,7 +1,7 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v4';
+const APP_VERSION = 'v5';
 
 // 再生／一時停止のマーク（絵文字だと iPad で色つきの四角になるので、自分で描く）
 const ICON_PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -11,7 +11,8 @@ const $ = (id) => document.getElementById(id);
 const VIDEO_RE = /\.(mp4|m4v|mov|webm)$/i;
 const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
 const THUMB_W = 480;                 // 棚の絵の幅（画素）
-const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
+// 選べる速さ：0.5〜2.0 倍を 0.1 ずつ
+const SPEEDS = Array.from({ length: 16 }, (_, i) => Math.round((0.5 + i * 0.1) * 10) / 10);
 const baseName = (name) => name.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
 const errText = (e) => (e && e.message ? e.message : String(e));
 
@@ -270,7 +271,9 @@ async function showStorage() {
 
 // ---------------- 再生する ----------------
 const video = $('video');
-let cur = null, curUrl = '', hideTimer = 0, lastSave = 0, seeking = false, speedIx = 0;
+let cur = null, curUrl = '', hideTimer = 0, lastSave = 0, seeking = false;
+let speed = loadJson('mp_speed', 1);
+if (!SPEEDS.includes(speed)) speed = 1;
 
 function savePos(done) {
   if (!cur || !video.duration) return;
@@ -281,7 +284,7 @@ function savePos(done) {
 function showCtl(keep) {
   $('player').classList.remove('hidectl');
   clearTimeout(hideTimer);
-  if (!keep && !video.paused) hideTimer = setTimeout(() => { if (!video.paused && !seeking) $('player').classList.add('hidectl'); }, 3500);
+  if (!keep && !video.paused) hideTimer = setTimeout(() => { if (!video.paused && !seeking && $('speedPanel').hidden) $('player').classList.add('hidectl'); }, 3500);
 }
 function updatePlayBtn() { $('play').innerHTML = video.paused ? ICON_PLAY : ICON_PAUSE; $('play').setAttribute('aria-label', video.paused ? '再生' : '一時停止'); }
 function updateTime() {
@@ -312,12 +315,13 @@ async function openPlayer(meta) {
   $('library').hidden = true; $('player').hidden = false;
   $('loading').hidden = false;
   $('fullBtn').hidden = !(document.fullscreenEnabled || document.webkitFullscreenEnabled) || isStandalone() || appleTouch;
-  video.playbackRate = SPEEDS[speedIx];
+  setSpeedLabel();
   const pos = loadJson('mp_pos_' + meta.id, null);
   const startAt = pos && !pos.done && pos.t > 5 ? pos.t : 0;
   video.src = curUrl;
   video.addEventListener('loadedmetadata', function f() {
     video.removeEventListener('loadedmetadata', f);
+    video.defaultPlaybackRate = speed; video.playbackRate = speed;   // 動画を入れたあとに設定しないと 1.0 にもどる
     if (startAt && startAt < video.duration - 5) video.currentTime = startAt;
     updateTime();
   });
@@ -337,6 +341,7 @@ function closePlayer() {
   video.removeAttribute('src'); video.load();
   if (curUrl) URL.revokeObjectURL(curUrl);
   cur = null; curUrl = '';
+  closeSpeed();
   if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
   $('player').hidden = true; $('library').hidden = false;
   renderLibrary();
@@ -375,12 +380,32 @@ $('back').onclick = closePlayer;
 $('play').onclick = (ev) => { ev.stopPropagation(); togglePlay(); };
 $('back10').onclick = (ev) => { ev.stopPropagation(); skip(-10); showCtl(); };
 $('fwd10').onclick = (ev) => { ev.stopPropagation(); skip(10); showCtl(); };
-$('speedBtn').onclick = () => {
-  speedIx = (speedIx + 1) % SPEEDS.length;
-  video.playbackRate = SPEEDS[speedIx];
-  $('speedBtn').textContent = '速さ：' + SPEEDS[speedIx].toFixed(SPEEDS[speedIx] % 1 && SPEEDS[speedIx] * 10 % 1 ? 2 : 1);
-  showCtl();
+// 速さ：ボタンを押すと一覧が出て、0.5〜2.0 倍を 0.1 ずつ選べる。選んだ速さは次の動画にも使う
+function setSpeedLabel() { $('speedBtn').textContent = '速さ：' + speed.toFixed(1); }
+function buildSpeedList() {
+  const box = $('speedList');
+  box.textContent = '';
+  for (const v of SPEEDS) {
+    const b = document.createElement('button');
+    b.className = 'btn' + (v === speed ? ' primary' : '');
+    b.textContent = v.toFixed(1);
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      speed = v; video.defaultPlaybackRate = v; video.playbackRate = v; saveJson('mp_speed', v);
+      setSpeedLabel(); closeSpeed(); showCtl();
+    };
+    box.appendChild(b);
+  }
+}
+function closeSpeed() { $('speedPanel').hidden = true; }
+$('speedBtn').onclick = (ev) => {
+  ev.stopPropagation();
+  if (!$('speedPanel').hidden) { closeSpeed(); showCtl(); return; }
+  buildSpeedList();
+  $('speedPanel').hidden = false;
+  showCtl(true);   // 選んでいる間はボタンを消さない
 };
+$('speedPanel').addEventListener('click', (ev) => ev.stopPropagation());
 $('fullBtn').onclick = () => {
   const el = $('player');
   if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
@@ -400,6 +425,7 @@ seekEl.addEventListener('change', () => { seeking = false; showCtl(); });
 const DOUBLE_MS = 320;
 let tapTimer = 0, lastTap = 0, lastSide = 0;
 $('stage').addEventListener('click', (ev) => {
+  if (!$('speedPanel').hidden) { closeSpeed(); showCtl(); return; }   // 速さの一覧が出ているときは、閉じるだけ
   const now = Date.now();
   const side = ev.clientX < window.innerWidth / 2 ? -1 : 1;
   if (side === lastSide && now - lastTap < DOUBLE_MS) {
