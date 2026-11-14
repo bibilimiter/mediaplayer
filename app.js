@@ -1,7 +1,7 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v9';
+const APP_VERSION = 'v10';
 
 // 再生／一時停止のマーク（絵文字だと iPad で色つきの四角になるので、自分で描く）
 const ICON_PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -808,7 +808,9 @@ $('subInput').onchange = async (ev) => {
 // ---------------- 小さい画面で見る（ピクチャ・イン・ピクチャ）・テレビに映す（AirPlay） ----------------
 const canPip = !!((document.pictureInPictureEnabled && video.requestPictureInPicture) ||
   (video.webkitSupportsPresentationMode && video.webkitSupportsPresentationMode('picture-in-picture')));
-$('pipBtn').hidden = !canPip;
+// iPad で確かめた（2026-11-15）：Safari では小さい画面にできるが、ホーム画面から開いたアプリでは iPad が断る（NotSupportedError）
+// そのため、ホーム画面から開いたときはボタンを出さない
+$('pipBtn').hidden = !canPip || (appleTouch && isStandalone());
 function inPip() { return !!document.pictureInPictureElement || video.webkitPresentationMode === 'picture-in-picture'; }
 function exitPip() {
   try {
