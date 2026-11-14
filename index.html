@@ -52,15 +52,17 @@
       <button id="speedBtn" class="btn" title="再生の速さ">速さ：1.0</button>
       <button id="fullBtn" class="btn" title="画面いっぱい" hidden>⛶</button>
     </header>
-    <div class="center">
-      <button id="back10" class="btn round" aria-label="10秒もどる">−10</button>
-      <button id="play" class="btn round big primary" aria-label="再生">▶</button>
-      <button id="fwd10" class="btn round" aria-label="10秒すすむ">＋10</button>
-    </div>
     <footer class="bar overlay bottom">
-      <span id="timeNow" class="time">0:00</span>
-      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="位置">
-      <span id="timeAll" class="time">0:00</span>
+      <div class="seekrow">
+        <span id="timeNow" class="time">0:00</span>
+        <input id="seek" type="range" min="0" max="1000" value="0" aria-label="位置">
+        <span id="timeAll" class="time">0:00</span>
+      </div>
+      <div class="btnrow">
+        <button id="back10" class="btn round" aria-label="10秒もどる">−10</button>
+        <button id="play" class="btn round big primary" aria-label="再生">▶</button>
+        <button id="fwd10" class="btn round" aria-label="10秒すすむ">＋10</button>
+      </div>
     </footer>
   </div>
 </section>

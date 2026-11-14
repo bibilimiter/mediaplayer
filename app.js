@@ -1,7 +1,7 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v2';  // 画面を直したら、sw.js の VERSION といっしょに上げる
+const APP_VERSION = 'v3';  // 画面を直したら、sw.js の VERSION といっしょに上げる
 
 const $ = (id) => document.getElementById(id);
 const VIDEO_RE = /\.(mp4|m4v|mov|webm)$/i;
@@ -391,18 +391,37 @@ seekEl.addEventListener('input', () => {
 });
 seekEl.addEventListener('change', () => { seeking = false; showCtl(); });
 
-// 画面を1回押すと、ボタンを出す／かくす。左右のはしを2回つづけて押すと、10秒もどる／すすむ
-let lastTap = 0, lastSide = 0;
+// 画面の左半分を2回つづけて押すと10秒もどる、右半分を2回つづけて押すと10秒すすむ
+// 1回だけ押したときは、ボタンを出す／かくす（2回目が来ないか、少しだけ待ってから動く）
+const DOUBLE_MS = 320;
+let tapTimer = 0, lastTap = 0, lastSide = 0;
 $('stage').addEventListener('click', (ev) => {
-  const now = Date.now(), x = ev.clientX / window.innerWidth;
-  const side = x < 0.35 ? -1 : x > 0.65 ? 1 : 0;
-  if (side && side === lastSide && now - lastTap < 350) { skip(side * 10); lastTap = 0; showCtl(); return; }
+  const now = Date.now();
+  const side = ev.clientX < window.innerWidth / 2 ? -1 : 1;
+  if (side === lastSide && now - lastTap < DOUBLE_MS) {
+    clearTimeout(tapTimer); tapTimer = 0;
+    lastTap = now;   // つづけて押せば、さらに10秒ずつ動く
+    skip(side * 10);
+    return;
+  }
   lastTap = now; lastSide = side;
-  if ($('player').classList.contains('hidectl')) showCtl(); else if (!video.paused) $('player').classList.add('hidectl');
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => {
+    tapTimer = 0;
+    if ($('player').classList.contains('hidectl')) showCtl(); else if (!video.paused) $('player').classList.add('hidectl');
+  }, DOUBLE_MS);
 });
 // ボタンのない所（ctl のすきま）を押したときも、同じ動きにする
 $('ctl').addEventListener('click', (ev) => { if (ev.target === $('ctl')) $('stage').dispatchEvent(new MouseEvent('click', { clientX: ev.clientX, clientY: ev.clientY })); });
-$('player').addEventListener('mousemove', () => { if (!$('player').hidden) showCtl(); });
+// マウスを動かしたらボタンを出す（指で押したときは、ここでは出さない。上の「1回押す」にまかせる）
+let lastMouse = '';
+$('player').addEventListener('pointermove', (ev) => {
+  if (ev.pointerType !== 'mouse' || $('player').hidden) return;
+  const at = ev.clientX + ',' + ev.clientY;
+  if (at === lastMouse) return;   // 押しただけで、動いていない
+  lastMouse = at;
+  showCtl();
+});
 
 // 2本の指で同時に1回押すと、再生／一時停止（画面のどこでもよい）
 let two = null;
