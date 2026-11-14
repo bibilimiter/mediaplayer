@@ -1,7 +1,11 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v3';  // 画面を直したら、sw.js の VERSION といっしょに上げる
+const APP_VERSION = 'v4';
+
+// 再生／一時停止のマーク（絵文字だと iPad で色つきの四角になるので、自分で描く）
+const ICON_PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+const ICON_PAUSE = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';  // 画面を直したら、sw.js の VERSION といっしょに上げる
 
 const $ = (id) => document.getElementById(id);
 const VIDEO_RE = /\.(mp4|m4v|mov|webm)$/i;
@@ -279,7 +283,7 @@ function showCtl(keep) {
   clearTimeout(hideTimer);
   if (!keep && !video.paused) hideTimer = setTimeout(() => { if (!video.paused && !seeking) $('player').classList.add('hidectl'); }, 3500);
 }
-function updatePlayBtn() { $('play').textContent = video.paused ? '▶' : '⏸'; $('play').setAttribute('aria-label', video.paused ? '再生' : '一時停止'); }
+function updatePlayBtn() { $('play').innerHTML = video.paused ? ICON_PLAY : ICON_PAUSE; $('play').setAttribute('aria-label', video.paused ? '再生' : '一時停止'); }
 function updateTime() {
   const d = video.duration || (cur && cur.duration) || 0;
   $('timeNow').textContent = fmtTime(video.currentTime);
@@ -442,12 +446,12 @@ $('player').addEventListener('touchend', (ev) => {
   ev.preventDefault();   // このあとに「1回押した」あつかいにならないように
   const willPlay = video.paused;
   togglePlay();
-  flashMark(willPlay ? '▶ 再生' : '⏸ 一時停止');
+  flashMark((willPlay ? ICON_PLAY : ICON_PAUSE) + (willPlay ? '再生' : '一時停止'));
 });
 $('player').addEventListener('touchcancel', () => { two = null; });
 function flashMark(text) {
   const mk = $('skipMark');
-  mk.textContent = text; mk.className = 'skipmark mid'; mk.hidden = false;
+  mk.innerHTML = text; mk.className = 'skipmark mid'; mk.hidden = false;
   clearTimeout(skip.timer); skip.timer = setTimeout(() => { mk.hidden = true; }, 700);
 }
 
