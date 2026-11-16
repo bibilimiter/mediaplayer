@@ -40,7 +40,7 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
   </div>
   <div id="folderBar" class="fbar" hidden>
     <button id="folderUp" class="btn">‹ 棚</button>
-    <strong id="folderName" class="grow"></strong>
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h4.6l2 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><strong id="folderName" class="grow"></strong>
     <button id="folderRename" class="btn">名前を変える</button>
     <button id="folderDel" class="btn del">フォルダをなくす</button>
   </div>
@@ -55,6 +55,17 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
     <span class="grow"></span>
     <button id="cleanBtn" class="btn del" hidden></button>
   </div>
+  <div id="storageBox" class="storage" hidden>
+    <span id="storage"></span>
+    <div id="storageBar" class="sbar"><i id="storageFill"></i></div>
+  </div>
+  <div id="emptyBox" class="empty" hidden>
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 2v12h16V6zm6 2.5 6 3.5-6 3.5z"/></svg>
+    <h2>まだ動画がありません</h2>
+    <p>下のボタンを押して、MP4 のファイルを選んでください（いくつかまとめて選べます）。
+取りこんだ動画はこの端末の中にしまうので、次からはネットなしで見られます。</p>
+    <label class="btn primary bigbtn" for="fileInput">＋ 動画を取りこむ</label>
+  </div>
   <div id="contWrap" hidden>
     <h2 class="shead">続きを見る</h2>
     <div id="contRow" class="crow"></div>
@@ -62,11 +73,22 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
   </div>
   <p id="libHint" class="hint" hidden></p>
   <div id="videos" class="videos"></div>
-  <p id="storage" class="small"></p>
+  <p id="libTip" class="small" hidden>動画を長押しするか、右下の「…」を押すと、フォルダへ移す・消すができます。</p>
   <p id="ver" class="small"></p>
+  <div id="actDlg" class="dlgback" hidden>
+    <div class="dlg">
+      <div class="drow"><strong id="actTitle" class="grow acttitle"></strong><button id="actClose" class="btn">閉じる</button></div>
+      <p id="actInfo" class="small actinfo"></p>
+      <div class="plist">
+        <button id="actPlay" class="btn primary">再生する</button>
+        <button id="actMove" class="btn">フォルダへ移す</button>
+        <button id="actDel" class="btn danger">この端末から消す</button>
+      </div>
+    </div>
+  </div>
   <div id="moveDlg" class="dlgback" hidden>
     <div class="dlg">
-      <div class="drow"><strong id="moveTitle" class="grow"></strong><button id="moveClose" class="btn">✕</button></div>
+      <div class="drow"><strong id="moveTitle" class="grow"></strong><button id="moveClose" class="btn">閉じる</button></div>
       <div id="moveList" class="plist"></div>
     </div>
   </div>
@@ -95,9 +117,9 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
         <dt>右半分を2回押す</dt><dd>10秒すすむ（つづけて押すと、さらにすすむ）</dd>
         <dt>上下になぞる</dt><dd>音量（上で大きく、下で小さく）</dd>
         <dt>「速さ」を長押し</dt><dd>1.0 倍にもどす</dd>
-        <dt>上の鍵のボタン</dt><dd>画面ロック（解除は、鍵のマークを長押し）</dd>
+        <dt>「その他」</dt><dd>画面ロック・しおり・スリープタイマーなど（ロックの解除は、鍵のマークを長押し）</dd>
       </dl>
-      <p class="small helpnote">この説明は、上の「？」でまた見られます。</p>
+      <p class="small helpnote">この説明は、上の「その他」→「操作の説明」でまた見られます。</p>
       <button id="helpOk" class="btn primary helpok">わかった</button>
     </div>
   </div>
@@ -106,18 +128,24 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
   </div>
   <div id="ctl">
     <header class="bar overlay top">
-      <button id="back" class="btn">‹ 棚</button>
+      <button id="back" class="btn glass">‹ 棚</button>
       <span id="title" class="title"></span>
-      <button id="airBtn" class="btn icon" title="テレビに映す（AirPlay）" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12h-4v-2h2V6H5v8h2v2H3zM12 13l6 7H6z"/></svg></button>
-      <button id="pipBtn" class="btn icon" title="小さい画面で見る" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v16H2zm2 2v12h16V6zm7 5h8v6h-8z"/></svg></button>
-      <button id="lockBtn" class="btn icon" title="画面ロック（さわっても反応しなくする）" aria-label="画面ロック"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z"/></svg></button>
-      <button id="bmBtn" class="btn icon" title="しおり" aria-label="しおり"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg></button>
-      <button id="timerBtn" class="btn icon" title="スリープタイマー" aria-label="スリープタイマー"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1 3h2v5.4l3.6 2.1-1 1.7L11 13.6z"/></svg><span id="timerLeft" class="tleft" hidden></span></button>
-      <button id="subBtn" class="btn" title="字幕と音声">字幕・音声</button>
-      <button id="speedBtn" class="btn" title="再生の速さ（長押しで 1.0 にもどす）">速さ：1.0</button>
-      <button id="fullBtn" class="btn" title="画面いっぱい" hidden>⛶</button>
-      <button id="helpBtn" class="btn" title="操作の説明" aria-label="操作の説明">？</button>
+      <button id="timerChip" class="btn glass chip" title="スリープタイマー" aria-label="スリープタイマー" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1 3h2v5.4l3.6 2.1-1 1.7L11 13.6z"/></svg><span id="timerLeft" class="tleft"></span></button>
+      <button id="subBtn" class="btn glass" title="字幕と音声">字幕・音声</button>
+      <button id="speedBtn" class="btn glass" title="再生の速さ（長押しで 1.0 にもどす）">速さ：1.0</button>
+      <button id="moreBtn" class="btn glass" title="そのほかの機能">その他</button>
     </header>
+    <div id="morePanel" class="speedpanel" hidden>
+      <div class="plist menu">
+        <button id="lockBtn" class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z"/></svg><span>画面ロック</span></button>
+        <button id="bmBtn" class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg><span>しおり</span></button>
+        <button id="timerBtn" class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1 3h2v5.4l3.6 2.1-1 1.7L11 13.6z"/></svg><span class="grow">スリープタイマー</span><span id="timerState" class="mstate"></span></button>
+        <button id="pipBtn" class="btn" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v16H2zm2 2v12h16V6zm7 5h8v6h-8z"/></svg><span>小さい画面で見る</span></button>
+        <button id="airBtn" class="btn" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12h-4v-2h2V6H5v8h2v2H3zM12 13l6 7H6z"/></svg><span>テレビに映す（AirPlay）</span></button>
+        <button id="fullBtn" class="btn" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg><span>画面いっぱい</span></button>
+        <button id="helpBtn" class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1 12h2v2h-2zm1-10a4 4 0 0 1 4 4c0 2.5-3 2.8-3 5h-2c0-3.2 3-3.5 3-5a2 2 0 0 0-4 0H8a4 4 0 0 1 4-4z"/></svg><span>操作の説明</span></button>
+      </div>
+    </div>
     <div id="speedPanel" class="speedpanel" hidden>
       <div class="sphead">再生の速さ</div>
       <div id="speedList" class="splist"></div>
@@ -156,20 +184,21 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
       <button id="bmAdd" class="btn primary addsub">＋ いまの場面に しおりを付ける</button>
       <div id="bmList" class="plist"></div>
     </div>
+    <div id="midCtl" class="midctl">
+      <button id="back10" class="btn round" aria-label="10秒もどる"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="12" y="16.2" font-size="6.5" font-weight="700" text-anchor="middle">10</text></svg></button>
+      <button id="play" class="btn round big" aria-label="再生"></button>
+      <button id="fwd10" class="btn round" aria-label="10秒すすむ"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" transform="translate(24 0) scale(-1 1)"/><text x="12" y="16.2" font-size="6.5" font-weight="700" text-anchor="middle">10</text></svg></button>
+    </div>
     <footer class="bar overlay bottom">
       <div id="seekPrev" class="seekprev" hidden>
         <video id="prevVideo" muted playsinline webkit-playsinline preload="auto"></video>
         <span id="prevTime">0:00</span>
       </div>
+      <div id="endInfo" class="endinfo"></div>
       <div class="seekrow">
         <span id="timeNow" class="time">0:00</span>
         <div class="seekwrap"><input id="seek" type="range" min="0" max="1000" value="0" aria-label="位置"><div id="bmMarks" class="bmmarks"></div></div>
         <span id="timeAll" class="time">0:00</span>
-      </div>
-      <div class="btnrow">
-        <button id="back10" class="btn round" aria-label="10秒もどる">−10</button>
-        <button id="play" class="btn round big primary" aria-label="再生"></button>
-        <button id="fwd10" class="btn round" aria-label="10秒すすむ">＋10</button>
       </div>
     </footer>
   </div>
