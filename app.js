@@ -3,6 +3,9 @@
 
 // 再生／一時停止のマーク（絵文字だと iPad で色つきの四角になるので、自分で描く）
 const ICON_PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+const ICON_FOLDER = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h4.6l2 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const ICON_FILM = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 2v12h16V6zm6 2.5 6 3.5-6 3.5z"/></svg>';
+const ICON_DOTS = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
 const ICON_PAUSE = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
 // 版数は sw.js の VERSION の1か所だけで決める（棚の下には、しまってある画面の版数を出す）
 
@@ -203,7 +206,7 @@ async function importFiles(files) {
         if (!VIDEO_RE.test(f.name) && !/^video\//.test(f.type)) throw new Error('動画ファイルではないようです');
         // 同じ動画（名前と大きさが同じ）が、もう入っていれば取りこまない
         const dup = have.concat(added).find((m) => m.file === f.name && m.size === f.size);
-        if (dup) throw new Error('もう入っています（' + (dup.folder ? '📁 ' + dup.folder + ' の中の ' : '') + '「' + dup.name + '」）');
+        if (dup) throw new Error('もう入っています（' + (dup.folder ? 'フォルダ「' + dup.folder + '」の中の ' : '') + '「' + dup.name + '」）');
         if (free != null && f.size > free - SPACE_MARGIN) {
           throw new Error('端末の空きが足りません（この動画 ' + fmtSize(f.size) + '、空きの目安 ' + (free - SPACE_MARGIN > 1048576 ? fmtSize(free - SPACE_MARGIN) : 'ほぼなし') + '）。見終わった動画を消すと空きができます');
         }
@@ -259,7 +262,7 @@ function videoCard(m, small) {
   const cv = document.createElement('div');
   cv.className = 'cv';
   if (m.thumb) { const img = document.createElement('img'); img.src = m.thumb; img.alt = ''; cv.appendChild(img); }
-  else cv.textContent = '🎬';
+  else cv.innerHTML = ICON_FILM;
   if (m.duration) { const len = document.createElement('span'); len.className = 'len'; len.textContent = fmtTime(m.duration); cv.appendChild(len); }
   if (pos && pos.done) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = '見終わり'; cv.appendChild(tag); }
   else if (m.subs && m.subs.length) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = '字幕'; cv.appendChild(tag); }
@@ -272,26 +275,54 @@ function videoCard(m, small) {
   const p = document.createElement('div'); p.className = 'p';
   const st = document.createElement('span');
   if (small) {
+    const pm = document.createElement('span'); pm.className = 'pmark'; pm.innerHTML = ICON_PLAY; cv.appendChild(pm);
     st.textContent = pos && m.duration ? 'あと ' + fmtTime(Math.max(0, m.duration - pos.t)) : '';
     p.append(st);
   } else {
     st.className = 'grow';
     st.textContent = (pos && !pos.done && pos.t > 0 ? fmtTime(pos.t) + ' から ・ ' : '') + fmtSize(m.size);
-    const mv = document.createElement('button'); mv.className = 'btn mini'; mv.textContent = '移す';
-    mv.onclick = (ev) => { ev.stopPropagation(); openMove(m); };
-    const del = document.createElement('button'); del.className = 'btn del'; del.textContent = '消す';
-    del.onclick = async (ev) => {
-      ev.stopPropagation();
-      if (!confirm('「' + m.name + '」を、この端末から消しますか？\n（もとのファイルは消えません）')) return;
-      await deleteVideo(m);
-      renderLibrary();
-    };
-    p.append(st, mv, del);
+    const more = document.createElement('button'); more.className = 'btn dots'; more.innerHTML = ICON_DOTS;
+    more.setAttribute('aria-label', '移す・消す'); more.title = '移す・消す';
+    more.onclick = (ev) => { ev.stopPropagation(); openAct(m); };
+    p.append(st, more);
   }
   card.append(cv, t, p);
-  card.onclick = () => openPlayer(m);
+  card.onclick = () => { if (card.held) { card.held = false; return; } openPlayer(m); };
+  onLongPress(card, () => openAct(m));
   return card;
 }
+// 長押し（0.5秒）で fn を呼ぶ。なぞって動かしたときは、長押しにしない
+function onLongPress(el, fn) {
+  let timer = 0, sx = 0, sy = 0;
+  el.addEventListener('pointerdown', (ev) => {
+    el.held = false;
+    if (ev.button) return;
+    sx = ev.clientX; sy = ev.clientY;
+    clearTimeout(timer);
+    timer = setTimeout(() => { timer = 0; el.held = true; fn(); }, 500);
+  });
+  el.addEventListener('pointermove', (ev) => { if (timer && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 10) { clearTimeout(timer); timer = 0; } });
+  for (const n of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(n, () => { clearTimeout(timer); timer = 0; });
+  el.addEventListener('contextmenu', (ev) => ev.preventDefault());
+}
+// 動画の「…」や長押しで出る一覧：再生する・フォルダへ移す・消す
+function openAct(m) {
+  const pos = loadJson('mp_pos_' + m.id, null);
+  $('actTitle').textContent = m.name;
+  $('actInfo').textContent = [m.duration ? fmtTime(m.duration) : '', fmtSize(m.size), m.folder ? 'フォルダ「' + m.folder + '」' : '', pos && pos.done ? '見終わり' : ''].filter(Boolean).join(' ・ ');
+  const close = () => { $('actDlg').hidden = true; };
+  $('actPlay').onclick = () => { close(); openPlayer(m); };
+  $('actMove').onclick = () => { close(); openMove(m); };
+  $('actDel').onclick = async () => {
+    close();
+    if (!confirm('「' + m.name + '」を、この端末から消しますか？\n（もとのファイルは消えません）')) return;
+    await deleteVideo(m);
+    renderLibrary();
+  };
+  $('actDlg').hidden = false;
+}
+$('actClose').onclick = () => { $('actDlg').hidden = true; };
+$('actDlg').addEventListener('click', (ev) => { if (ev.target === $('actDlg')) $('actDlg').hidden = true; });
 // 動画を1本消す（中身・情報・覚えていることをすべて）
 async function deleteVideo(m) {
   await deleteBody(m); await dbDel('videos', m.id);
@@ -304,7 +335,7 @@ function folderCard(name, list) {
   cv.className = 'cv';
   const withThumb = list.find((m) => m.thumb);
   if (withThumb) { const img = document.createElement('img'); img.src = withThumb.thumb; img.alt = ''; cv.appendChild(img); }
-  const ic = document.createElement('span'); ic.className = 'fic'; ic.textContent = '📁'; cv.appendChild(ic);
+  const ic = document.createElement('span'); ic.className = 'fic'; ic.innerHTML = ICON_FOLDER; cv.appendChild(ic);
   const t = document.createElement('div'); t.className = 't'; t.textContent = name;
   const p = document.createElement('div'); p.className = 'p'; p.textContent = 'フォルダ ・ ' + list.length + ' 本';
   card.append(cv, t, p);
@@ -346,7 +377,7 @@ async function renderLibrary() {
   if (query) {
     // 名前で探しているときは、フォルダの中の動画もまとめて出す
     $('contWrap').hidden = true;
-    if (!top) $('folderName').textContent = '📁 ' + curFolder;
+    if (!top) $('folderName').textContent = curFolder;
     for (const m of sorted) if (m.name.toLowerCase().includes(query) && (top || m.folder === curFolder)) { box.appendChild(videoCard(m)); shown++; }
   } else if (top) {
     // 続きを見る：途中まで見た動画を、最近見た順に
@@ -358,7 +389,7 @@ async function renderLibrary() {
     for (const m of sorted) if (!m.folder) { box.appendChild(videoCard(m)); shown++; }
   } else {
     $('contWrap').hidden = true;
-    $('folderName').textContent = '📁 ' + curFolder;
+    $('folderName').textContent = curFolder;
     for (const m of sorted) if (m.folder === curFolder) { box.appendChild(videoCard(m)); shown++; }
   }
   // 見終わった動画をまとめて消すボタン（棚のいちばん上ではすべて、フォルダの中ではそのフォルダだけ）
@@ -370,21 +401,32 @@ async function renderLibrary() {
     for (const m of doneList) { try { await deleteVideo(m); } catch (e) { } }
     renderLibrary();
   };
-  $('libHint').hidden = shown > 0;
-  $('libHint').textContent = query ? '「' + $('search').value.trim() + '」に合う動画はありません。' : top
-    ? 'まだ動画がありません。\n右上の「＋ 動画を取りこむ」を押して、MP4 のファイルを選んでください（いくつかまとめて選べます）。\n取りこんだ動画はこの端末の中にしまうので、次からはネットなしで見られます。'
-    : 'このフォルダには、まだ動画がありません。\nここで「＋ 動画を取りこむ」を押すと、このフォルダに入ります。棚の動画の「移す」でも入れられます。';
+  // 動画が1本もないときは、真ん中に大きな「動画を取りこむ」を出す
+  const empty = !metas.length && top && !query;
+  $('emptyBox').hidden = !empty;
+  $('libTools').hidden = !metas.length;
+  $('libTip').hidden = !metas.length;
+  $('libHint').hidden = shown > 0 || empty;
+  $('libHint').textContent = query ? '「' + $('search').value.trim() + '」に合う動画はありません。'
+    : 'このフォルダには、まだ動画がありません。\nここで「＋ 動画を取りこむ」を押すと、このフォルダに入ります。棚の動画の「…」→「フォルダへ移す」でも入れられます。';
   showStorage();
 }
 async function showStorage() {
-  let text = '';
+  let text = '', frac = -1;
   const total = metas.reduce((s, m) => s + m.size, 0);
   if (metas.length) text = '動画 ' + metas.length + ' 本・合わせて ' + fmtSize(total);
   try {
     const e = await navigator.storage.estimate();
-    if (e && e.quota) text += (text ? ' ／ ' : '') + 'この端末でしまえる量の目安：あと ' + fmtSize(Math.max(0, e.quota - (e.usage || 0)));
+    if (e && e.quota) {
+      text += (text ? ' ／ ' : '') + 'あと ' + fmtSize(Math.max(0, e.quota - (e.usage || 0))) + ' しまえます（目安）';
+      frac = Math.max(0, Math.min(1, (e.usage || 0) / e.quota));
+    }
   } catch (e) { }
   $('storage').textContent = text;
+  $('storageBox').hidden = !text;
+  $('storageBar').hidden = frac < 0;
+  $('storageFill').style.width = (frac > 0 ? Math.max(1, frac * 100) : 0) + '%';
+  $('storageBar').classList.toggle('full', frac > 0.9);   // 残りが少ないときは、色を変える
 }
 function askFolderName(def) {
   const v = prompt('フォルダの名前', def || '');
@@ -431,7 +473,7 @@ function openMove(m) {
     list.appendChild(b);
   };
   add('棚（フォルダに入れない）', '', !m.folder);
-  for (const f of folders) add('📁 ' + f, f, m.folder === f);
+  for (const f of folders) add('フォルダ「' + f + '」', f, m.folder === f);
   add('＋ 新しいフォルダを作って入れる', null, false);
   $('moveDlg').hidden = false;
 }
@@ -461,8 +503,23 @@ function updateTime() {
   const d = video.duration || (cur && cur.duration) || 0;
   $('timeNow').textContent = fmtTime(video.currentTime);
   $('timeAll').textContent = fmtTime(d);
-  if (!seeking) $('seek').value = d ? Math.round(video.currentTime / d * 1000) : 0;
+  if (!seeking) { $('seek').value = d ? Math.round(video.currentTime / d * 1000) : 0; paintSeek(); }
+  // 残りの時間と、見終わる時刻（速さを変えているときは、その分も入れる）
+  const left = d ? Math.max(0, d - video.currentTime) / (video.playbackRate || 1) : 0;
+  let info = '';
+  if (left > 0) {
+    const end = new Date(Date.now() + left * 1000);
+    info = 'あと ' + fmtLeft(left) + '・' + end.getHours() + ':' + String(end.getMinutes()).padStart(2, '0') + ' に終わる';
+  }
+  if ($('endInfo').textContent !== info) $('endInfo').textContent = info;
 }
+function fmtLeft(sec) {
+  if (sec < 60) return '1分未満';
+  const m = Math.round(sec / 60);
+  return m >= 60 ? Math.floor(m / 60) + '時間' + (m % 60 ? (m % 60) + '分' : '') : m + '分';
+}
+// 位置のバーの、見た所までを白くぬる
+function paintSeek() { $('seek').style.setProperty('--pf', $('seek').value / 1000); }
 function togglePlay() { ensureAudio(); if (video.paused) video.play().catch(() => { }); else video.pause(); }
 function skip(sec) {
   if (!video.duration) return;
@@ -617,7 +674,7 @@ $('fullBtn').onclick = () => {
 const seekEl = $('seek');
 // つまみを動かしている間は、場面の小さな絵と時間だけを出し、指をはなしたときに本体の動画を移す
 seekEl.addEventListener('input', () => {
-  seeking = true; showCtl(true);
+  seeking = true; showCtl(true); paintSeek();
   const d = video.duration || 0;
   if (d) { $('timeNow').textContent = fmtTime(seekEl.value / 1000 * d); showPreview(seekEl.value / 1000); }
 });
@@ -976,7 +1033,11 @@ $('helpOk').onclick = (ev) => { ev.stopPropagation(); closeHelp(); };
 $('helpDlg').addEventListener('click', (ev) => { ev.stopPropagation(); if (ev.target === $('helpDlg')) closeHelp(); });
 for (const n of ['touchstart', 'touchmove', 'touchend']) $('helpDlg').addEventListener(n, (ev) => ev.stopPropagation(), { passive: true });
 
-const PANELS = ['speedPanel', 'subPanel', 'timerPanel', 'bmPanel'];
+const PANELS = ['speedPanel', 'subPanel', 'timerPanel', 'bmPanel', 'morePanel'];
+// 「その他」：画面ロック・しおり・スリープタイマーなどをまとめた一覧
+$('moreBtn').onclick = (ev) => { ev.stopPropagation(); togglePanel('morePanel', () => { }); };
+$('morePanel').addEventListener('click', (ev) => ev.stopPropagation());
+for (const id of ['pipBtn', 'airBtn', 'fullBtn']) $(id).addEventListener('click', () => { closePanels(); showCtl(); });
 function closePanels() { for (const p of PANELS) $(p).hidden = true; }
 const panelOpen = () => PANELS.some((p) => !$(p).hidden);
 function togglePanel(id, build) {
@@ -1043,8 +1104,8 @@ function checkSleep() {
 }
 function showSleep() {
   const on = !!(sleepAt || sleepEnd);
-  $('timerBtn').classList.toggle('on', on);
-  $('timerLeft').hidden = !on;
+  $('timerChip').hidden = !on;   // タイマーが動いている間は、上に残りの時間を出す
+  $('timerState').textContent = on ? 'オン' : '';
   $('timerLeft').textContent = sleepEnd ? '終わりで' : sleepAt ? Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000)) + '分' : '';
   $('timerNow').textContent = sleepEnd ? 'この動画の終わりで止めます' : sleepAt ? 'あと ' + fmtTime((sleepAt - Date.now()) / 1000) + ' で止めます' : '';
 }
@@ -1063,6 +1124,7 @@ function buildTimerPanel() {
   showSleep();
 }
 $('timerBtn').onclick = (ev) => { ev.stopPropagation(); togglePanel('timerPanel', buildTimerPanel); };
+$('timerChip').onclick = (ev) => { ev.stopPropagation(); togglePanel('timerPanel', buildTimerPanel); };
 $('timerPanel').addEventListener('click', (ev) => ev.stopPropagation());
 video.addEventListener('ended', () => { if (sleepEnd) { setSleep(0); flashMark('タイマーで止めました'); } });
 // うしろに回っている間は時計が止まることがあるので、もどったときにも確かめる
