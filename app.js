@@ -1,14 +1,15 @@
 // MediaPlayer：動画（MP4）を端末の中に取りこんで再生する。iPad・Windows・Android のブラウザで動く（PWA）
 'use strict';
 
-const APP_VERSION = 'v10';
-
 // 再生／一時停止のマーク（絵文字だと iPad で色つきの四角になるので、自分で描く）
 const ICON_PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
-const ICON_PAUSE = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';  // 画面を直したら、sw.js の VERSION といっしょに上げる
+const ICON_PAUSE = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+// 版数は sw.js の VERSION の1か所だけで決める（棚の下には、しまってある画面の版数を出す）
 
 const $ = (id) => document.getElementById(id);
 const VIDEO_RE = /\.(mp4|m4v|mov|webm)$/i;
+const OTHER_VIDEO_RE = /\.(mkv|avi|wmv|flv|ts|m2ts|mts|mpg|mpeg|vob|iso|rmvb|3gp)$/i;   // iPad では再生できない形式
+const SPACE_MARGIN = 200 * 1024 * 1024;   // 空きの目安から、念のため残しておく量
 const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
 const THUMB_W = 480;                 // 棚の絵の幅（画素）
 // 選べる速さ：0.5〜2.0 倍を 0.1 ずつ
@@ -182,6 +183,13 @@ async function importFiles(files) {
   files = files.filter((f) => !isSubFile(f));
   try {
     if (navigator.storage && navigator.storage.persist) { try { await navigator.storage.persist(); } catch (e) { } }
+    // 取りこむ前に、空きの目安を調べておく（大きな動画を最後まで書いてから「入らない」とならないように）
+    let free = null;
+    try {
+      const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
+      if (est && est.quota) free = Math.max(0, est.quota - (est.usage || 0));
+    } catch (e) { }
+    const have = await dbAll('videos');
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const head = (files.length > 1 ? '（' + (i + 1) + '／' + files.length + '）' : '') + f.name;
@@ -191,7 +199,14 @@ async function importFiles(files) {
         $('importProg').style.width = Math.round(p * 100) + '%';
       };
       try {
+        if (OTHER_VIDEO_RE.test(f.name)) throw new Error('この形式（' + f.name.replace(/^.*\./, '').toUpperCase() + '）は iPad では再生できません。パソコンで MP4 に変えてから取りこんでください');
         if (!VIDEO_RE.test(f.name) && !/^video\//.test(f.type)) throw new Error('動画ファイルではないようです');
+        // 同じ動画（名前と大きさが同じ）が、もう入っていれば取りこまない
+        const dup = have.concat(added).find((m) => m.file === f.name && m.size === f.size);
+        if (dup) throw new Error('もう入っています（' + (dup.folder ? '📁 ' + dup.folder + ' の中の ' : '') + '「' + dup.name + '」）');
+        if (free != null && f.size > free - SPACE_MARGIN) {
+          throw new Error('端末の空きが足りません（この動画 ' + fmtSize(f.size) + '、空きの目安 ' + (free - SPACE_MARGIN > 1048576 ? fmtSize(free - SPACE_MARGIN) : 'ほぼなし') + '）。見終わった動画を消すと空きができます');
+        }
         show('調べています', 0);
         const info = await probe(f);
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -202,6 +217,7 @@ async function importFiles(files) {
         try { await dbPut('videos', id, meta); }
         catch (e) { await deleteBody(meta); throw e; }
         added.push(meta);
+        if (free != null) free -= f.size;
       } catch (e) {
         failed.push('・' + f.name + '：' + (e && e.name === 'QuotaExceededError'
           ? '端末の空きが足りないため、入りませんでした。見終わった動画を消すと空きができます。' : errText(e)));
@@ -447,6 +463,7 @@ async function openPlayer(meta) {
     if (ai != null) selectAudio(ai, false);
   });
   updatePlayBtn(); updateTime(); showCtl(true);
+  if (!loadJson('mp_help_seen', false)) openHelp();   // はじめて再生するときだけ、操作の説明を出す
   ensureAudio();
   video.play().catch(() => { });   // 自動で始まらないブラウザでは、▶ を押してもらう
   if ('mediaSession' in navigator) {
@@ -464,6 +481,7 @@ function closePlayer() {
   if (curUrl) URL.revokeObjectURL(curUrl);
   cur = null; curUrl = '';
   closePanels();
+  $('helpDlg').hidden = true;
   exitPip();
   pvUnload();
   selectSub(null);
@@ -583,9 +601,11 @@ $('stage').addEventListener('click', (ev) => {
   }
   lastTap = now; lastSide = side;
   clearTimeout(tapTimer);
+  // ボタンが消えているときは、すぐに出す（待たない）。出ているときは、2回目が来ないのを確かめてから消す
+  if ($('player').classList.contains('hidectl')) { tapTimer = 0; showCtl(); return; }
   tapTimer = setTimeout(() => {
     tapTimer = 0;
-    if ($('player').classList.contains('hidectl')) showCtl(); else if (!video.paused) $('player').classList.add('hidectl');
+    if (!video.paused) $('player').classList.add('hidectl');
   }, DOUBLE_MS);
 });
 // ボタンのない所（ctl のすきま）を押したときも、同じ動きにする
@@ -877,6 +897,14 @@ function showPreview(frac) {
   pvLoad(); pvSeek(t);
 }
 
+// ---------------- 操作の説明 ----------------
+function openHelp() { closePanels(); $('helpDlg').hidden = false; showCtl(true); }
+function closeHelp() { $('helpDlg').hidden = true; saveJson('mp_help_seen', true); showCtl(); }
+$('helpBtn').onclick = (ev) => { ev.stopPropagation(); openHelp(); };
+$('helpOk').onclick = (ev) => { ev.stopPropagation(); closeHelp(); };
+$('helpDlg').addEventListener('click', (ev) => { ev.stopPropagation(); if (ev.target === $('helpDlg')) closeHelp(); });
+for (const n of ['touchstart', 'touchmove', 'touchend']) $('helpDlg').addEventListener(n, (ev) => ev.stopPropagation(), { passive: true });
+
 function closePanels() { $('speedPanel').hidden = true; $('subPanel').hidden = true; }
 const panelOpen = () => !$('speedPanel').hidden || !$('subPanel').hidden;
 
@@ -955,6 +983,7 @@ $('player').addEventListener('wheel', (ev) => {
 // Windows：スペースで再生／一時停止、← → で10秒もどる／すすむ、↑ ↓ で音量、Esc で棚へ
 document.addEventListener('keydown', (ev) => {
   if ($('player').hidden) return;
+  if (!$('helpDlg').hidden) { if (ev.key === 'Escape' || ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); closeHelp(); } return; }
   if (ev.key === 'ArrowUp') { ev.preventDefault(); setVol(vol + 0.05, true); return; }
   if (ev.key === 'ArrowDown') { ev.preventDefault(); setVol(vol - 0.05, true); return; }
   if (ev.key === ' ') { ev.preventDefault(); togglePlay(); }
@@ -968,7 +997,19 @@ window.addEventListener('pagehide', () => { if (cur) savePos(false); });
 
 // ---------------- はじめ ----------------
 if (appleTouch && isStandalone()) document.documentElement.classList.add('iosapp');
-$('ver').textContent = 'MediaPlayer ' + APP_VERSION;
+// 版数：sw.js がしまった入れ物の名前（mp-v11 など）から出す
+function showVersion() {
+  if (!window.caches) return;
+  caches.keys().then((ks) => {
+    const v = ks.filter((k) => /^mp-v\d+$/.test(k)).sort((a, b) => b.slice(4) - a.slice(4))[0];
+    if (v) $('ver').textContent = 'MediaPlayer ' + v.slice(3);
+  }).catch(() => { });
+}
+showVersion();
+if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('controllerchange', showVersion);
+// iPad の Safari で開いているときは、ホーム画面から使うようにお知らせする（Safari のままだと、しばらく使わないと動画が消えることがある）
+if (appleTouch && !isStandalone()) $('homeBar').hidden = false;
+$('homeClose').onclick = () => { $('homeBar').hidden = true; };
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   navigator.serviceWorker.register('sw.js').catch(() => { });
 }
