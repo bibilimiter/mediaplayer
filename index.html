@@ -25,6 +25,11 @@
     <label class="btn primary" for="fileInput">＋ 動画を取りこむ</label>
     <input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.m4v,.mov,.srt,.vtt" multiple hidden>
   </header>
+  <div id="homeBar" class="notice warn" hidden>
+    <span class="grow">Safari で開いています。共有ボタン →「ホーム画面に追加」をして、ホーム画面のアイコンから使ってください。
+Safari のままだと、しばらく使わない間に、取りこんだ動画が iPad に消されることがあります。</span>
+    <button id="homeClose" class="btn">閉じる</button>
+  </div>
   <div id="importBar" class="notice" hidden>
     <span id="importText" class="grow"></span>
     <div class="prog"><i id="importProg"></i></div>
@@ -69,6 +74,21 @@
     <span id="volNum"></span>
   </div>
   <div id="loading" class="loading" hidden>読みこんでいます…</div>
+  <div id="helpDlg" class="dlgback" hidden>
+    <div class="dlg help">
+      <div class="drow"><strong class="grow">さわり方</strong></div>
+      <dl class="helplist">
+        <dt>画面を1回押す</dt><dd>ボタンを出す／かくす</dd>
+        <dt>2本の指で1回押す</dt><dd>再生／一時停止（画面のどこでもよい）</dd>
+        <dt>左半分を2回押す</dt><dd>10秒もどる（つづけて押すと、さらにもどる）</dd>
+        <dt>右半分を2回押す</dt><dd>10秒すすむ（つづけて押すと、さらにすすむ）</dd>
+        <dt>上下になぞる</dt><dd>音量（上で大きく、下で小さく）</dd>
+        <dt>「速さ」を長押し</dt><dd>1.0 倍にもどす</dd>
+      </dl>
+      <p class="small helpnote">この説明は、上の「？」でまた見られます。</p>
+      <button id="helpOk" class="btn primary helpok">わかった</button>
+    </div>
+  </div>
   <div id="ctl">
     <header class="bar overlay top">
       <button id="back" class="btn">‹ 棚</button>
@@ -78,6 +98,7 @@
       <button id="subBtn" class="btn" title="字幕と音声">字幕・音声</button>
       <button id="speedBtn" class="btn" title="再生の速さ（長押しで 1.0 にもどす）">速さ：1.0</button>
       <button id="fullBtn" class="btn" title="画面いっぱい" hidden>⛶</button>
+      <button id="helpBtn" class="btn" title="操作の説明" aria-label="操作の説明">？</button>
     </header>
     <div id="speedPanel" class="speedpanel" hidden>
       <div class="sphead">再生の速さ</div>
