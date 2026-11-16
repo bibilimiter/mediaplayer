@@ -283,8 +283,7 @@ function videoCard(m, small) {
     del.onclick = async (ev) => {
       ev.stopPropagation();
       if (!confirm('「' + m.name + '」を、この端末から消しますか？\n（もとのファイルは消えません）')) return;
-      await deleteBody(m); await dbDel('videos', m.id);
-      for (const k of ['mp_pos_', 'mp_sub_', 'mp_aud_']) removeKey(k + m.id);
+      await deleteVideo(m);
       renderLibrary();
     };
     p.append(st, mv, del);
@@ -292,6 +291,11 @@ function videoCard(m, small) {
   card.append(cv, t, p);
   card.onclick = () => openPlayer(m);
   return card;
+}
+// 動画を1本消す（中身・情報・覚えていることをすべて）
+async function deleteVideo(m) {
+  await deleteBody(m); await dbDel('videos', m.id);
+  for (const k of ['mp_pos_', 'mp_sub_', 'mp_aud_', 'mp_bm_', 'mp_suboff_']) removeKey(k + m.id);
 }
 function folderCard(name, list) {
   const card = document.createElement('div');
@@ -307,6 +311,23 @@ function folderCard(name, list) {
   card.onclick = () => { curFolder = name; renderLibrary(); window.scrollTo(0, 0); };
   return card;
 }
+// 並べ方：name 名前の順 / added 取りこんだ順（新しい順）/ recent 最近見た順 / size 大きい順
+let sortMode = loadJson('mp_sort', 'name');
+function sortVideos(list) {
+  const a = list.slice();
+  if (sortMode === 'added') a.sort((x, y) => (y.added || 0) - (x.added || 0));
+  else if (sortMode === 'size') a.sort((x, y) => y.size - x.size);
+  else if (sortMode === 'recent') {
+    const at = (m) => (loadJson('mp_pos_' + m.id, null) || {}).at || 0;
+    a.sort((x, y) => at(y) - at(x) || collator.compare(x.name, y.name));
+  }
+  return a;   // name は、読みこんだときに名前の順にしてある
+}
+$('sortSel').value = sortMode;
+if ($('sortSel').value !== sortMode) { sortMode = 'name'; $('sortSel').value = 'name'; }
+$('sortSel').onchange = () => { sortMode = $('sortSel').value; saveJson('mp_sort', sortMode); renderLibrary(); };
+let searchTimer = 0;
+$('search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderLibrary, 200); });
 async function renderLibrary() {
   metas = (await dbAll('videos')).sort((a, b) => collator.compare(a.name, b.name));
   // 動画が入っているのに一覧にないフォルダは、一覧にもどす
@@ -320,21 +341,37 @@ async function renderLibrary() {
   $('folderBar').hidden = top;
   $('folderNew').hidden = !top;
   let shown = 0;
-  if (top) {
+  const query = $('search').value.trim().toLowerCase();
+  const sorted = sortVideos(metas);
+  if (query) {
+    // 名前で探しているときは、フォルダの中の動画もまとめて出す
+    $('contWrap').hidden = true;
+    if (!top) $('folderName').textContent = '📁 ' + curFolder;
+    for (const m of sorted) if (m.name.toLowerCase().includes(query) && (top || m.folder === curFolder)) { box.appendChild(videoCard(m)); shown++; }
+  } else if (top) {
     // 続きを見る：途中まで見た動画を、最近見た順に
     const inprog = metas.map((m) => [m, loadJson('mp_pos_' + m.id, null)])
       .filter(([m, p]) => p && !p.done && p.t > 5).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 12);
     for (const [m] of inprog) $('contRow').appendChild(videoCard(m, true));
     $('contWrap').hidden = !inprog.length;
     for (const f of folders) { box.appendChild(folderCard(f, metas.filter((m) => m.folder === f))); shown++; }
-    for (const m of metas) if (!m.folder) { box.appendChild(videoCard(m)); shown++; }
+    for (const m of sorted) if (!m.folder) { box.appendChild(videoCard(m)); shown++; }
   } else {
     $('contWrap').hidden = true;
     $('folderName').textContent = '📁 ' + curFolder;
-    for (const m of metas) if (m.folder === curFolder) { box.appendChild(videoCard(m)); shown++; }
+    for (const m of sorted) if (m.folder === curFolder) { box.appendChild(videoCard(m)); shown++; }
   }
+  // 見終わった動画をまとめて消すボタン（棚のいちばん上ではすべて、フォルダの中ではそのフォルダだけ）
+  const doneList = metas.filter((m) => (top || m.folder === curFolder) && (loadJson('mp_pos_' + m.id, null) || {}).done);
+  $('cleanBtn').hidden = !doneList.length;
+  $('cleanBtn').textContent = '見終わった ' + doneList.length + ' 本を消す（' + fmtSize(doneList.reduce((s, m) => s + m.size, 0)) + '）';
+  $('cleanBtn').onclick = async () => {
+    if (!confirm('見終わった動画 ' + doneList.length + ' 本を、この端末から消しますか？\n' + doneList.map((m) => '・' + m.name).join('\n') + '\n（もとのファイルは消えません）')) return;
+    for (const m of doneList) { try { await deleteVideo(m); } catch (e) { } }
+    renderLibrary();
+  };
   $('libHint').hidden = shown > 0;
-  $('libHint').textContent = top
+  $('libHint').textContent = query ? '「' + $('search').value.trim() + '」に合う動画はありません。' : top
     ? 'まだ動画がありません。\n右上の「＋ 動画を取りこむ」を押して、MP4 のファイルを選んでください（いくつかまとめて選べます）。\n取りこんだ動画はこの端末の中にしまうので、次からはネットなしで見られます。'
     : 'このフォルダには、まだ動画がありません。\nここで「＋ 動画を取りこむ」を押すと、このフォルダに入ります。棚の動画の「移す」でも入れられます。';
   showStorage();
@@ -414,6 +451,7 @@ function savePos(done) {
   lastSave = Date.now();
 }
 function showCtl(keep) {
+  if (locked) return;   // 画面ロック中は、ボタンを出さない
   $('player').classList.remove('hidectl');
   clearTimeout(hideTimer);
   if (!keep && !video.paused) hideTimer = setTimeout(() => { if (!video.paused && !seeking && !panelOpen()) $('player').classList.add('hidectl'); }, 3500);
@@ -450,6 +488,8 @@ async function openPlayer(meta) {
   setSpeedLabel();
   setSubSize(subSize);
   subSel = null; subShown = null; $('subText').hidden = true;
+  subOff = Number(loadJson('mp_suboff_' + meta.id, 0)) || 0;
+  renderBmMarks();
   const pos = loadJson('mp_pos_' + meta.id, null);
   const startAt = pos && !pos.done && pos.t > 5 ? pos.t : 0;
   video.src = curUrl;
@@ -458,6 +498,7 @@ async function openPlayer(meta) {
     video.defaultPlaybackRate = speed; video.playbackRate = speed;   // 動画を入れたあとに設定しないと 1.0 にもどる
     if (startAt && startAt < video.duration - 5) video.currentTime = startAt;
     updateTime();
+    renderBmMarks();
     applySavedSub();
     const ai = loadJson('mp_aud_' + meta.id, null);
     if (ai != null) selectAudio(ai, false);
@@ -482,6 +523,8 @@ function closePlayer() {
   cur = null; curUrl = '';
   closePanels();
   $('helpDlg').hidden = true;
+  setLock(false);
+  setSleep(0);
   exitPip();
   pvUnload();
   selectSub(null);
@@ -703,7 +746,7 @@ function findVideoFor(subFile, list) {
 }
 
 // 再生中の字幕：選べるのは、取りこんだ字幕と、動画の中に入っている字幕（iPad の Safari で読めるもの）
-let subSel = null, subShown = '', subRaf = 0;
+let subSel = null, subShown = '', subRaf = 0, subOff = 0;
 let subSize = loadJson('mp_subsize', 'm');
 function subSources() {
   const list = [];
@@ -732,16 +775,28 @@ function applySavedSub() {
   else if (saved && list.some((x) => x.key === saved)) selectSub(saved);
   else selectSub(cur.subs && cur.subs.length ? 'f0' : null);   // 字幕を取りこんであれば、はじめから出す
 }
+// 動画の中の字幕も、ずれ直しができるように、文の一覧を自分で読む
+function trackCues(track) {
+  try {
+    if (!track || !track.cues || !track.cues.length) return null;
+    if (track._mpCues && track._mpCues.n === track.cues.length) return track._mpCues.list;
+    const list = Array.from(track.cues).map((x) => ({ s: x.startTime, e: x.endTime, t: String(x.text || '').replace(/<[^>]+>/g, '') }))
+      .sort((x, y) => x.s - y.s);
+    track._mpCues = { n: track.cues.length, list };
+    return list;
+  } catch (e) { return null; }
+}
 function renderSub() {
   let text = '';
-  if (subSel && subSel.cues) {
-    const c = subSel.cues, t = video.currentTime;
+  const cues = subSel && (subSel.cues || trackCues(subSel.track));
+  if (cues) {
+    const c = cues, t = video.currentTime - subOff;   // subOff が＋なら、字幕をおそく出す
     let lo = 0, hi = c.length - 1, k = -1;
     while (lo <= hi) { const mid = (lo + hi) >> 1; if (c[mid].s <= t) { k = mid; lo = mid + 1; } else hi = mid - 1; }
     const on = [];
     for (let i = k; i >= 0 && i > k - 4; i--) if (c[i].e > t) on.unshift(c[i].t);   // 重なっている字幕も出す
     text = on.join('\n');
-  } else if (subSel && subSel.track && subSel.track.activeCues) {
+  } else if (subSel && subSel.track && subSel.track.activeCues) {   // 文の一覧が読めないとき（ずれ直しは効かない）
     text = Array.from(subSel.track.activeCues).map((x) => String(x.text || '').replace(/<[^>]+>/g, '')).join('\n');
   }
   if (text === subShown) return;
@@ -793,6 +848,10 @@ function buildSubPanel() {
     b.onclick = (ev) => { ev.stopPropagation(); setSubSize(v); buildSubPanel(); };
     sz.appendChild(b);
   }
+  $('subOffBox').hidden = !subSel;
+  $('subOffVal').textContent = (subOff > 0 ? '＋' : subOff < 0 ? '−' : '') + Math.abs(subOff).toFixed(1) + '秒' + (subOff > 0 ? '（おそく）' : subOff < 0 ? '（はやく）' : '');
+  $('compBtn').textContent = '小さな音を聞きやすく：' + (comp ? 'オン' : 'オフ');
+  $('compBtn').className = 'btn' + (comp ? ' primary' : '');
   const at = audioTracks();
   $('audioBox').hidden = !at.length;
   const al = $('audioList');
@@ -812,6 +871,18 @@ $('subBtn').onclick = (ev) => {
   if (open) { buildSubPanel(); $('subPanel').hidden = false; showCtl(true); } else showCtl();
 };
 $('subPanel').addEventListener('click', (ev) => ev.stopPropagation());
+// 字幕のずれ直し：動画ごとに覚える
+function moveSubOff(d) {
+  subOff = d == null ? 0 : Math.round((subOff + d) * 10) / 10;
+  if (cur) { if (subOff) saveJson('mp_suboff_' + cur.id, subOff); else removeKey('mp_suboff_' + cur.id); }
+  subShown = null; renderSub(); buildSubPanel();
+}
+$('subOffMinus').onclick = (ev) => { ev.stopPropagation(); moveSubOff(-0.1); };
+$('subOffPlus').onclick = (ev) => { ev.stopPropagation(); moveSubOff(0.1); };
+$('subOffMinus1').onclick = (ev) => { ev.stopPropagation(); moveSubOff(-1); };
+$('subOffPlus1').onclick = (ev) => { ev.stopPropagation(); moveSubOff(1); };
+$('subOffReset').onclick = (ev) => { ev.stopPropagation(); moveSubOff(null); };
+$('compBtn').onclick = (ev) => { ev.stopPropagation(); setComp(!comp); buildSubPanel(); flashMark('小さな音を聞きやすく：' + (comp ? 'オン' : 'オフ')); };
 $('subInput').onchange = async (ev) => {
   const f = ev.target.files && ev.target.files[0];
   ev.target.value = '';
@@ -905,8 +976,133 @@ $('helpOk').onclick = (ev) => { ev.stopPropagation(); closeHelp(); };
 $('helpDlg').addEventListener('click', (ev) => { ev.stopPropagation(); if (ev.target === $('helpDlg')) closeHelp(); });
 for (const n of ['touchstart', 'touchmove', 'touchend']) $('helpDlg').addEventListener(n, (ev) => ev.stopPropagation(), { passive: true });
 
-function closePanels() { $('speedPanel').hidden = true; $('subPanel').hidden = true; }
-const panelOpen = () => !$('speedPanel').hidden || !$('subPanel').hidden;
+const PANELS = ['speedPanel', 'subPanel', 'timerPanel', 'bmPanel'];
+function closePanels() { for (const p of PANELS) $(p).hidden = true; }
+const panelOpen = () => PANELS.some((p) => !$(p).hidden);
+function togglePanel(id, build) {
+  const open = $(id).hidden;
+  closePanels();
+  if (open) { build(); $(id).hidden = false; showCtl(true); } else showCtl();
+}
+
+// ---------------- 画面ロック ----------------
+// ロック中は、画面をさわっても何も起きない。鍵のマークを長押し（0.8秒）すると解除
+let locked = false, lockHold = 0, lockBadgeTimer = 0;
+function setLock(on) {
+  locked = !!on;
+  $('lockLayer').hidden = !locked;
+  if (locked) {
+    closePanels(); $('player').classList.add('hidectl');
+    showLockBadge();
+  } else {
+    $('lockBadge').hidden = true; clearTimeout(lockHold); $('lockBadge').classList.remove('hold');
+  }
+}
+function showLockBadge() {
+  $('lockBadge').hidden = false;
+  clearTimeout(lockBadgeTimer);
+  lockBadgeTimer = setTimeout(() => { if (!$('lockBadge').classList.contains('hold')) $('lockBadge').hidden = true; }, 2500);
+}
+$('lockBtn').onclick = (ev) => { ev.stopPropagation(); setLock(true); };
+for (const n of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
+  $('lockLayer').addEventListener(n, (ev) => {
+    ev.stopPropagation();
+    if (ev.cancelable && !$('lockBadge').contains(ev.target)) ev.preventDefault();
+    if (n === 'touchstart' && $('lockBadge').hidden) showLockBadge();
+  }, { passive: false });
+}
+$('lockLayer').addEventListener('click', (ev) => { ev.stopPropagation(); if ($('lockBadge').hidden) showLockBadge(); });
+$('lockLayer').addEventListener('contextmenu', (ev) => ev.preventDefault());
+$('lockBadge').addEventListener('pointerdown', (ev) => {
+  ev.stopPropagation();
+  $('lockBadge').classList.add('hold');
+  clearTimeout(lockHold);
+  lockHold = setTimeout(() => { setLock(false); showCtl(); flashMark('ロックを解除しました'); }, 800);
+});
+for (const n of ['pointerup', 'pointerleave', 'pointercancel']) {
+  $('lockBadge').addEventListener(n, () => { clearTimeout(lockHold); $('lockBadge').classList.remove('hold'); if (locked) showLockBadge(); });
+}
+
+// ---------------- スリープタイマー ----------------
+// 分を選ぶと、その時間がたったら止める。「この動画の終わり」は、終わりまで見たら止める（棚にはもどらない）
+let sleepAt = 0, sleepEnd = false, sleepTick = 0;
+const SLEEP_LIST = [[0, 'オフ'], [15, '15分'], [30, '30分'], [45, '45分'], [60, '60分'], [90, '90分'], ['end', 'この動画の終わり']];
+function setSleep(v) {
+  clearInterval(sleepTick); sleepTick = 0;
+  sleepAt = 0; sleepEnd = false;
+  if (v === 'end') sleepEnd = true;
+  else if (v > 0) { sleepAt = Date.now() + v * 60000; sleepTick = setInterval(checkSleep, 1000); }
+  showSleep();
+}
+function checkSleep() {
+  if (sleepAt && Date.now() >= sleepAt) {
+    video.pause();
+    setSleep(0);
+    flashMark('タイマーで止めました');
+  } else showSleep();
+}
+function showSleep() {
+  const on = !!(sleepAt || sleepEnd);
+  $('timerBtn').classList.toggle('on', on);
+  $('timerLeft').hidden = !on;
+  $('timerLeft').textContent = sleepEnd ? '終わりで' : sleepAt ? Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000)) + '分' : '';
+  $('timerNow').textContent = sleepEnd ? 'この動画の終わりで止めます' : sleepAt ? 'あと ' + fmtTime((sleepAt - Date.now()) / 1000) + ' で止めます' : '';
+}
+function buildTimerPanel() {
+  const box = $('timerList');
+  box.textContent = '';
+  for (const [v, label] of SLEEP_LIST) {
+    const b = document.createElement('button');
+    const isOn = v === 'end' ? sleepEnd : v === 0 ? !sleepAt && !sleepEnd : false;
+    b.className = 'btn' + (isOn ? ' primary' : '');
+    b.textContent = label;
+    if (v === 'end') b.style.gridColumn = 'span 3';
+    b.onclick = (ev) => { ev.stopPropagation(); setSleep(v); closePanels(); showCtl(); flashMark(v === 0 ? 'タイマー：オフ' : 'タイマー：' + label + (v === 'end' ? 'で止める' : '後に止める')); };
+    box.appendChild(b);
+  }
+  showSleep();
+}
+$('timerBtn').onclick = (ev) => { ev.stopPropagation(); togglePanel('timerPanel', buildTimerPanel); };
+$('timerPanel').addEventListener('click', (ev) => ev.stopPropagation());
+video.addEventListener('ended', () => { if (sleepEnd) { setSleep(0); flashMark('タイマーで止めました'); } });
+// うしろに回っている間は時計が止まることがあるので、もどったときにも確かめる
+document.addEventListener('visibilitychange', () => { if (!document.hidden && sleepAt) checkSleep(); });
+
+// ---------------- しおり ----------------
+// 動画ごとに mp_bm_<id> = [秒, 秒, ...]
+const getBms = () => (cur ? loadJson('mp_bm_' + cur.id, []) : []).filter((t) => typeof t === 'number').sort((a, b) => a - b);
+function saveBms(list) { if (!cur) return; if (list.length) saveJson('mp_bm_' + cur.id, list); else removeKey('mp_bm_' + cur.id); renderBmMarks(); }
+function renderBmMarks() {
+  const box = $('bmMarks');
+  box.textContent = '';
+  const d = video.duration || (cur && cur.duration) || 0;
+  if (!d) return;
+  for (const t of getBms()) { const i = document.createElement('i'); i.style.left = Math.min(100, t / d * 100) + '%'; box.appendChild(i); }
+}
+function buildBmPanel() {
+  $('bmAdd').textContent = '＋ いまの場面（' + fmtTime(video.currentTime) + '）に しおりを付ける';
+  const list = $('bmList');
+  list.textContent = '';
+  const bms = getBms();
+  if (!bms.length) { const p = document.createElement('div'); p.className = 'small tnow'; p.textContent = 'まだ しおりはありません。'; list.appendChild(p); }
+  for (const t of bms) {
+    const row = document.createElement('div'); row.className = 'bmrow';
+    const go = document.createElement('button'); go.className = 'btn'; go.textContent = fmtTime(t) + ' へ移る';
+    go.onclick = (ev) => { ev.stopPropagation(); video.currentTime = t; updateTime(); closePanels(); showCtl(); };
+    const del = document.createElement('button'); del.className = 'btn del'; del.textContent = '外す';
+    del.onclick = (ev) => { ev.stopPropagation(); saveBms(getBms().filter((x) => x !== t)); buildBmPanel(); };
+    row.append(go, del); list.appendChild(row);
+  }
+}
+$('bmAdd').onclick = (ev) => {
+  ev.stopPropagation();
+  const t = Math.round(video.currentTime * 10) / 10;
+  const bms = getBms();
+  if (!bms.some((x) => Math.abs(x - t) < 2)) bms.push(t);
+  saveBms(bms); buildBmPanel(); flashMark('しおり：' + fmtTime(t));
+};
+$('bmBtn').onclick = (ev) => { ev.stopPropagation(); togglePanel('bmPanel', buildBmPanel); };
+$('bmPanel').addEventListener('click', (ev) => ev.stopPropagation());
 
 // ---------------- 音量 ----------------
 // iPad・iPhone の Safari は、ページから動画の音量（video.volume）を変えられない（いつも最大のまま）
@@ -914,10 +1110,34 @@ const panelOpen = () => !$('speedPanel').hidden || !$('subPanel').hidden;
 // 100% が iPad 本体の音量と同じ大きさ。本体の音量ボタンも、いつもどおり使える
 let vol = loadJson('mp_vol', 1);
 if (!(vol >= 0 && vol <= 1)) vol = 1;
-let actx = null, gainNode = null;
+let actx = null, gainNode = null, srcNode = null, compNode = null, makeupNode = null;
+// 小さな音を聞きやすく：大きい音をおさえ、全体を持ち上げる（音の通り道に「圧縮」の部品をはさむ）
+let comp = !!loadJson('mp_comp', false);
+function routeAudio() {
+  if (!srcNode) return;
+  try {
+    srcNode.disconnect();
+    if (comp) {
+      if (!compNode) {
+        compNode = actx.createDynamicsCompressor();
+        compNode.threshold.value = -40; compNode.knee.value = 20; compNode.ratio.value = 8;
+        compNode.attack.value = 0.005; compNode.release.value = 0.3;
+        makeupNode = actx.createGain(); makeupNode.gain.value = 2.2;
+        compNode.connect(makeupNode); makeupNode.connect(gainNode);
+      }
+      srcNode.connect(compNode);
+    } else srcNode.connect(gainNode);
+  } catch (e) { }
+}
+function setComp(on) {
+  comp = !!on; saveJson('mp_comp', comp);
+  ensureAudio.need = true;
+  ensureAudio();
+  routeAudio();
+}
 function ensureAudio() {   // 指で操作したとき（再生ボタンなど）に呼ぶ。iPad は、そのときでないと音を出す準備ができない
   if (actx) { if (actx.state !== 'running') actx.resume().catch(() => { }); return; }
-  if (vol >= 1 && !ensureAudio.need) return;   // 音量を変えたことがなければ、ふつうのまま再生する（いちばん安全）
+  if (vol >= 1 && !comp && !ensureAudio.need) return;   // 音量も聞こえ方も変えていなければ、ふつうのまま再生する（いちばん安全）
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   try {
@@ -926,10 +1146,11 @@ function ensureAudio() {   // 指で操作したとき（再生ボタンなど�
     actx = new AC();
     gainNode = actx.createGain();
     gainNode.gain.value = vol;
-    actx.createMediaElementSource(video).connect(gainNode);
+    srcNode = actx.createMediaElementSource(video);
     gainNode.connect(actx.destination);
+    routeAudio();
     if (actx.state !== 'running') actx.resume().catch(() => { });
-  } catch (e) { actx = null; gainNode = null; }
+  } catch (e) { actx = null; gainNode = null; srcNode = null; }
 }
 function setVol(v, show) {
   vol = Math.max(0, Math.min(1, Math.round(v * 100) / 100));
@@ -975,14 +1196,14 @@ $('stage').addEventListener('touchend', () => { if (vs && vs.on) volSwipeEnd = D
 $('stage').addEventListener('touchcancel', () => { if (vs && vs.on) volSwipeEnd = Date.now(); vs = null; });
 // Windows：マウスのホイールでも音量を変えられる
 $('player').addEventListener('wheel', (ev) => {
-  if ($('player').hidden || panelOpen()) return;
+  if ($('player').hidden || panelOpen() || locked) return;
   ev.preventDefault();
   setVol(vol + (ev.deltaY < 0 ? 0.05 : -0.05), true);
 }, { passive: false });
 
 // Windows：スペースで再生／一時停止、← → で10秒もどる／すすむ、↑ ↓ で音量、Esc で棚へ
 document.addEventListener('keydown', (ev) => {
-  if ($('player').hidden) return;
+  if ($('player').hidden || locked) return;
   if (!$('helpDlg').hidden) { if (ev.key === 'Escape' || ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); closeHelp(); } return; }
   if (ev.key === 'ArrowUp') { ev.preventDefault(); setVol(vol + 0.05, true); return; }
   if (ev.key === 'ArrowDown') { ev.preventDefault(); setVol(vol - 0.05, true); return; }

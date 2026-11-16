@@ -44,6 +44,17 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
     <button id="folderRename" class="btn">名前を変える</button>
     <button id="folderDel" class="btn del">フォルダをなくす</button>
   </div>
+  <div id="libTools" class="tools">
+    <input id="search" type="search" placeholder="名前で探す" aria-label="名前で探す" autocomplete="off">
+    <select id="sortSel" class="btn" aria-label="並べ方">
+      <option value="name">名前の順</option>
+      <option value="added">取りこんだ順（新しい順）</option>
+      <option value="recent">最近見た順</option>
+      <option value="size">大きい順</option>
+    </select>
+    <span class="grow"></span>
+    <button id="cleanBtn" class="btn del" hidden></button>
+  </div>
   <div id="contWrap" hidden>
     <h2 class="shead">続きを見る</h2>
     <div id="contRow" class="crow"></div>
@@ -84,10 +95,14 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
         <dt>右半分を2回押す</dt><dd>10秒すすむ（つづけて押すと、さらにすすむ）</dd>
         <dt>上下になぞる</dt><dd>音量（上で大きく、下で小さく）</dd>
         <dt>「速さ」を長押し</dt><dd>1.0 倍にもどす</dd>
+        <dt>上の鍵のボタン</dt><dd>画面ロック（解除は、鍵のマークを長押し）</dd>
       </dl>
       <p class="small helpnote">この説明は、上の「？」でまた見られます。</p>
       <button id="helpOk" class="btn primary helpok">わかった</button>
     </div>
+  </div>
+  <div id="lockLayer" class="locklayer" hidden>
+    <div id="lockBadge" class="lockbadge" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z"/></svg><span>長押しでロックを解除</span><i id="lockProg"></i></div>
   </div>
   <div id="ctl">
     <header class="bar overlay top">
@@ -95,6 +110,9 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
       <span id="title" class="title"></span>
       <button id="airBtn" class="btn icon" title="テレビに映す（AirPlay）" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12h-4v-2h2V6H5v8h2v2H3zM12 13l6 7H6z"/></svg></button>
       <button id="pipBtn" class="btn icon" title="小さい画面で見る" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v16H2zm2 2v12h16V6zm7 5h8v6h-8z"/></svg></button>
+      <button id="lockBtn" class="btn icon" title="画面ロック（さわっても反応しなくする）" aria-label="画面ロック"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z"/></svg></button>
+      <button id="bmBtn" class="btn icon" title="しおり" aria-label="しおり"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg></button>
+      <button id="timerBtn" class="btn icon" title="スリープタイマー" aria-label="スリープタイマー"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1 3h2v5.4l3.6 2.1-1 1.7L11 13.6z"/></svg><span id="timerLeft" class="tleft" hidden></span></button>
       <button id="subBtn" class="btn" title="字幕と音声">字幕・音声</button>
       <button id="speedBtn" class="btn" title="再生の速さ（長押しで 1.0 にもどす）">速さ：1.0</button>
       <button id="fullBtn" class="btn" title="画面いっぱい" hidden>⛶</button>
@@ -111,10 +129,32 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
       <input id="subInput" type="file" hidden>
       <div class="sphead">字幕の大きさ</div>
       <div id="subSizeList" class="splist three"></div>
+      <div id="subOffBox" hidden>
+        <div class="sphead">字幕のずれ直し <span id="subOffVal" class="offval"></span></div>
+        <div class="splist four">
+          <button id="subOffMinus" class="btn">はやく<br>−0.1秒</button>
+          <button id="subOffPlus" class="btn">おそく<br>＋0.1秒</button>
+          <button id="subOffMinus1" class="btn">はやく<br>−1秒</button>
+          <button id="subOffPlus1" class="btn">おそく<br>＋1秒</button>
+        </div>
+        <button id="subOffReset" class="btn addsub">ずれを 0 にもどす</button>
+      </div>
       <div id="audioBox" hidden>
         <div class="sphead">音声</div>
         <div id="audioList" class="plist"></div>
       </div>
+      <div class="sphead">音の聞こえ方</div>
+      <div class="plist"><button id="compBtn" class="btn">小さな音を聞きやすく：オフ</button></div>
+    </div>
+    <div id="timerPanel" class="speedpanel" hidden>
+      <div class="sphead">スリープタイマー（時間がきたら止める）</div>
+      <div id="timerList" class="splist three"></div>
+      <div id="timerNow" class="small tnow"></div>
+    </div>
+    <div id="bmPanel" class="speedpanel" hidden>
+      <div class="sphead">しおり</div>
+      <button id="bmAdd" class="btn primary addsub">＋ いまの場面に しおりを付ける</button>
+      <div id="bmList" class="plist"></div>
     </div>
     <footer class="bar overlay bottom">
       <div id="seekPrev" class="seekprev" hidden>
@@ -123,7 +163,7 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
       </div>
       <div class="seekrow">
         <span id="timeNow" class="time">0:00</span>
-        <input id="seek" type="range" min="0" max="1000" value="0" aria-label="位置">
+        <div class="seekwrap"><input id="seek" type="range" min="0" max="1000" value="0" aria-label="位置"><div id="bmMarks" class="bmmarks"></div></div>
         <span id="timeAll" class="time">0:00</span>
       </div>
       <div class="btnrow">
