@@ -106,6 +106,7 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
     <div class="vbar"><i id="volFill"></i></div>
     <span id="volNum"></span>
   </div>
+  <div id="miniBar" class="minibar" aria-hidden="true"><i id="miniFill"></i></div>
   <div id="loading" class="loading" hidden>読みこんでいます…</div>
   <div id="helpDlg" class="dlgback" hidden>
     <div class="dlg help">
@@ -140,6 +141,7 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
         <button id="lockBtn" class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z"/></svg><span>画面ロック</span></button>
         <button id="bmBtn" class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg><span>しおり</span></button>
         <button id="timerBtn" class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1 3h2v5.4l3.6 2.1-1 1.7L11 13.6z"/></svg><span class="grow">スリープタイマー</span><span id="timerState" class="mstate"></span></button>
+        <button id="miniBtn" class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v14H3zm2 2v10h14V5z"/><path d="M3 19h12v2.5H3z"/></svg><span class="grow">下の進み具合バー</span><span id="miniState" class="mstate"></span></button>
         <button id="pipBtn" class="btn" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v16H2zm2 2v12h16V6zm7 5h8v6h-8z"/></svg><span>小さい画面で見る</span></button>
         <button id="airBtn" class="btn" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12h-4v-2h2V6H5v8h2v2H3zM12 13l6 7H6z"/></svg><span>テレビに映す（AirPlay）</span></button>
         <button id="fullBtn" class="btn" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg><span>画面いっぱい</span></button>
