@@ -504,6 +504,7 @@ function updateTime() {
   $('timeNow').textContent = fmtTime(video.currentTime);
   $('timeAll').textContent = fmtTime(d);
   if (!seeking) { $('seek').value = d ? Math.round(video.currentTime / d * 1000) : 0; paintSeek(); }
+  $('miniFill').style.transform = 'scaleX(' + (d ? Math.min(1, video.currentTime / d) : 0) + ')';
   // 残りの時間と、見終わる時刻（速さを変えているときは、その分も入れる）
   const left = d ? Math.max(0, d - video.currentTime) / (video.playbackRate || 1) : 0;
   let info = '';
@@ -1064,6 +1065,15 @@ function showLockBadge() {
   clearTimeout(lockBadgeTimer);
   lockBadgeTimer = setTimeout(() => { if (!$('lockBadge').classList.contains('hold')) $('lockBadge').hidden = true; }, 2500);
 }
+// 下の進み具合バー：ボタンをかくしている間も、画面のいちばん下に細いバーで、どこまで見たかを出す（オン／オフを覚えておく）
+let miniOn = loadJson('mp_minibar', true) !== false;
+function setMini(on) {
+  miniOn = !!on; saveJson('mp_minibar', miniOn);
+  $('player').classList.toggle('minion', miniOn);
+  $('miniState').textContent = miniOn ? 'オン' : 'オフ';
+}
+setMini(miniOn);
+$('miniBtn').onclick = (ev) => { ev.stopPropagation(); setMini(!miniOn); flashMark('下の進み具合バー：' + (miniOn ? 'オン' : 'オフ')); };
 $('lockBtn').onclick = (ev) => { ev.stopPropagation(); setLock(true); };
 for (const n of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
   $('lockLayer').addEventListener(n, (ev) => {

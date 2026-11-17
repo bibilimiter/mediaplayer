@@ -249,3 +249,9 @@ label.btn.addsub { display: flex; }
 #player:not(.hidectl) .subtext { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 96px); }
 .menu .btn .ic { flex: none; }
 .crow .video { margin: 0; color: var(--text); }
+
+/* ボタンをかくしている間だけ、画面のいちばん下に細い進み具合バーを出す（その他 → 下の進み具合バー でオン／オフ） */
+.minibar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.22); pointer-events: none;
+  opacity: 0; transition: opacity .25s; z-index: 2; }
+.minibar i { display: block; height: 100%; width: 100%; background: rgba(255,255,255,.9); transform-origin: left center; transform: scaleX(0); }
+#player.hidectl.minion .minibar { opacity: 1; }
