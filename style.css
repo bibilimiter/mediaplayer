@@ -213,6 +213,8 @@ label.btn.addsub { display: flex; }
 /* 再生画面：上下の濃い帯をやめて、うすい影にする。ボタンのない所を押すと、下の動画に届く */
 .overlay { background: none; pointer-events: none; }
 .overlay button, .overlay .seekrow { pointer-events: auto; }
+/* ボタンをかくしている間は、見えないボタンやシークバーを押せないようにする（押すとボタンが出るだけ。見えないまま跳ばない） */
+#player.hidectl #ctl, #player.hidectl #ctl * { pointer-events: none !important; }
 .overlay.top { background: linear-gradient(to bottom, rgba(0,0,0,.72), rgba(0,0,0,0)); padding-bottom: 40px; }
 .overlay.bottom { background: linear-gradient(to top, rgba(0,0,0,.78), rgba(0,0,0,0)); padding-top: 44px; gap: 0; }
 .btn.glass { background: rgba(20,20,24,.55); border-color: rgba(255,255,255,.2); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
