@@ -86,6 +86,7 @@ async function saveBody(id, file, onProgress) {
   return 'idb';
 }
 async function loadBody(meta) {
+  if (meta.direct) return meta.body;   // 保存せずに再生：選んだファイルをそのまま使う
   if (meta.store === 'opfs') {
     const fh = await (await videosDir()).getFileHandle(meta.id);
     return fh.getFile();
@@ -249,6 +250,39 @@ $('fileInput').onchange = (ev) => {
   const files = Array.from(ev.target.files || []);
   ev.target.value = '';
   importFiles(files);
+};
+
+// ---------------- 保存せずに再生（パソコン向け） ----------------
+// 選んだファイルを、この端末にしまわずに、そのまま再生する。ブラウザは前のファイルを自分で開き直せないので、毎回選んでもらう
+// 続きから再生：ファイルの名前と大きさから見分ける名前（d_…）を作り、見た位置（mp_pos_d_…）を覚える。同じファイルを選べば続きから
+function directId(f) {
+  const key = f.name + '|' + f.size;
+  let h1 = 0x811c9dc5, h2 = 5381;
+  for (let i = 0; i < key.length; i++) { const c = key.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = (Math.imul(h2, 33) + c) >>> 0; }
+  return 'd_' + h1.toString(36) + h2.toString(36);
+}
+async function playDirect(files) {
+  const vids = files.filter((f) => !isSubFile(f));
+  const subFiles = files.filter(isSubFile);
+  if (!vids.length) { showMsg('動画のファイルを選んでください（字幕のファイルは、動画といっしょに選べます）。'); return; }
+  const f = vids[0];
+  // 同じ動画（名前と大きさが同じ）を取りこんであれば、そちらを開く（続きの位置も同じものを使う）
+  const have = (await dbAll('videos')).find((m) => m.file === f.name && m.size === f.size);
+  if (have) { openPlayer(have); return; }
+  const meta = { id: directId(f), name: baseName(f.name), file: f.name, size: f.size, type: f.type || 'video/mp4',
+    duration: 0, w: 0, h: 0, thumb: '', thumbOk: true, store: 'direct', folder: '', subs: [], direct: true, body: f };
+  const failed = [];
+  for (const sf of subFiles) {
+    try { await addSubTo(meta, sf); } catch (e) { failed.push('・' + sf.name + '：' + errText(e)); }
+  }
+  if (vids.length > 1) failed.push('・動画は1本ずつ再生します。はじめの「' + f.name + '」を開きました。');
+  if (failed.length) showMsg(failed.join('\n'));
+  openPlayer(meta);
+}
+$('directInput').onchange = (ev) => {
+  const files = Array.from(ev.target.files || []);
+  ev.target.value = '';
+  playDirect(files);
 };
 
 // ---------------- 棚 ----------------
@@ -558,7 +592,11 @@ async function openPlayer(meta) {
   video.addEventListener('loadedmetadata', function f() {
     video.removeEventListener('loadedmetadata', f);
     video.defaultPlaybackRate = speed; video.playbackRate = speed;   // 動画を入れたあとに設定しないと 1.0 にもどる
-    if (startAt && startAt < video.duration - 5) video.currentTime = startAt;
+    if (meta.direct) { meta.w = video.videoWidth; meta.h = video.videoHeight; meta.duration = isFinite(video.duration) ? video.duration : 0; }
+    if (startAt && startAt < video.duration - 5) {
+      video.currentTime = startAt;
+      if (meta.direct) flashMark('続きから（' + fmtTime(startAt) + '）');
+    }
     updateTime();
     renderBmMarks();
     applySavedSub();
@@ -582,6 +620,7 @@ function closePlayer() {
   video.pause();
   video.removeAttribute('src'); video.load();
   if (curUrl) URL.revokeObjectURL(curUrl);
+  if (cur && cur.direct) cur.body = null;
   cur = null; curUrl = '';
   closePanels();
   $('helpDlg').hidden = true;
@@ -824,7 +863,7 @@ async function addSubTo(meta, file) {
   const label = langName(rest) || rest || file.name;
   meta.subs = (meta.subs || []).filter((x) => x.file !== file.name);
   meta.subs.push({ file: file.name, label, cues });
-  await dbPut('videos', meta.id, meta);
+  if (!meta.direct) await dbPut('videos', meta.id, meta);   // 保存せずに再生のときは、いま見ている間だけ使う
   return meta.subs.length - 1;
 }
 // 字幕ファイルが、どの動画のものかを名前で探す（「映画.srt」「映画.ja.srt」→「映画」）
@@ -1334,6 +1373,8 @@ showVersion();
 if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('controllerchange', showVersion);
 // iPad の Safari で開いているときは、ホーム画面から使うようにお知らせする（Safari のままだと、しばらく使わないと動画が消えることがある）
 if (appleTouch && !isStandalone()) $('homeBar').hidden = false;
+// 保存せずに再生は、パソコン向け（iPad では、外出先でも見られるように取りこんで使う）
+if (!appleTouch) { $('directBtn').hidden = false; $('directHint').hidden = false; }
 $('homeClose').onclick = () => { $('homeBar').hidden = true; };
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   navigator.serviceWorker.register('sw.js').catch(() => { });

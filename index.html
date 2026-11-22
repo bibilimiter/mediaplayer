@@ -24,6 +24,8 @@
     <button id="folderNew" class="btn" title="動画を分けて入れるフォルダを作る">＋ フォルダ</button>
     <label class="btn primary" for="fileInput">＋ 動画を取りこむ</label>
     <input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.m4v,.mov,.srt,.vtt" multiple hidden>
+    <label id="directBtn" class="btn" for="directInput" title="動画をこの端末にしまわずに、そのまま再生する（毎回ファイルを選びます。同じファイルなら続きから）" hidden>保存せずに再生</label>
+    <input id="directInput" type="file" accept="video/*,.mp4,.m4v,.mov,.webm,.mkv,.srt,.vtt" multiple hidden>
   </header>
   <div id="homeBar" class="notice warn" hidden>
     <span class="grow">Safari で開いています。共有ボタン →「ホーム画面に追加」をして、ホーム画面のアイコンから使ってください。
@@ -65,6 +67,7 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
     <p>下のボタンを押して、MP4 のファイルを選んでください（いくつかまとめて選べます）。
 取りこんだ動画はこの端末の中にしまうので、次からはネットなしで見られます。</p>
     <label class="btn primary bigbtn" for="fileInput">＋ 動画を取りこむ</label>
+    <p id="directHint" class="small" hidden>しまわずに見たいときは、上の「保存せずに再生」を押してください（毎回ファイルを選びます。同じファイルなら続きから始まります）。</p>
   </div>
   <div id="contWrap" hidden>
     <h2 class="shead">続きを見る</h2>
