@@ -486,7 +486,7 @@ $('moveDlg').addEventListener('click', (ev) => { if (ev.target === $('moveDlg'))
 
 // ---------------- 再生する ----------------
 const video = $('video');
-let cur = null, curUrl = '', hideTimer = 0, lastSave = 0, seeking = false;
+let cur = null, curUrl = '', hideTimer = 0, lastSave = 0, seeking = false, seekHover = false;
 let speed = loadJson('mp_speed', 1);
 if (!SPEEDS.includes(speed)) speed = 1;
 
@@ -500,7 +500,7 @@ function showCtl(keep) {
   if (locked) return;   // 画面ロック中は、ボタンを出さない
   $('player').classList.remove('hidectl');
   clearTimeout(hideTimer);
-  if (!keep && !video.paused) hideTimer = setTimeout(() => { if (!video.paused && !seeking && !panelOpen()) $('player').classList.add('hidectl'); }, 3500);
+  if (!keep && !video.paused) hideTimer = setTimeout(() => { if (!video.paused && !seeking && !seekHover && !panelOpen()) $('player').classList.add('hidectl'); }, 3500);
 }
 function updatePlayBtn() { $('play').innerHTML = video.paused ? ICON_PLAY : ICON_PAUSE; $('play').setAttribute('aria-label', video.paused ? '再生' : '一時停止'); }
 function updateTime() {
@@ -690,6 +690,23 @@ seekEl.addEventListener('change', () => {
   const d = video.duration || 0;
   if (d) video.currentTime = seekEl.value / 1000 * d;
   seeking = false; $('seekPrev').hidden = true; showCtl();
+});
+// パソコン（マウス）：バーの上にマウスを乗せるだけで、その場所の時間と場面の小さな絵を出す（押すまで動画は動かさない）
+// 指で押したときは、ここでは何もしない（上の「つまみを動かしている間」のまま）
+function hoverFrac(ev) {
+  const r = seekEl.getBoundingClientRect(), pad = 11;   // つまみの半分の幅だけ、バーの両はしが内側にある
+  return Math.max(0, Math.min(1, (ev.clientX - r.left - pad) / Math.max(1, r.width - pad * 2)));
+}
+seekEl.addEventListener('pointermove', (ev) => {
+  if (ev.pointerType !== 'mouse' || seeking || !video.duration) return;
+  seekHover = true;
+  showPreview(hoverFrac(ev));
+});
+seekEl.addEventListener('pointerleave', (ev) => {
+  if (ev.pointerType !== 'mouse') return;
+  seekHover = false;
+  if (!seeking) $('seekPrev').hidden = true;
+  showCtl();
 });
 
 // 画面の左半分を2回つづけて押すと10秒もどる、右半分を2回つづけて押すと10秒すすむ
@@ -1025,7 +1042,7 @@ function pvDone() {
 }
 pv.addEventListener('seeked', pvDone);
 pv.addEventListener('loadedmetadata', () => { if (pvWant != null) pvDone(); });
-function pvUnload() { pvSrc = ''; pvWant = null; pvBusy = false; pv.removeAttribute('src'); pv.load(); $('seekPrev').hidden = true; }
+function pvUnload() { seekHover = false; pvSrc = ''; pvWant = null; pvBusy = false; pv.removeAttribute('src'); pv.load(); $('seekPrev').hidden = true; }
 function showPreview(frac) {
   const d = video.duration || 0;
   if (!d) return;
