@@ -55,6 +55,9 @@ function removeKey(key) { try { localStorage.removeItem(key); } catch (e) { } }
 // 動画ごとに覚えること：mp_pos_<id> = { t: 見た位置（秒）, d: 長さ（秒）, at: 最後に見た時刻, done: 最後まで見たか }
 
 const canOpfs = !!(navigator.storage && navigator.storage.getDirectory && window.Worker);
+// Brave は、のぞき見を防ぐために「空きの目安」を本当より小さく（2GBほどに）出すことがある。
+// そのため Brave では目安を使わず、実際に書いてみて、入らなければそこで止める
+const braveP = (async () => { try { return !!(navigator.brave && await navigator.brave.isBrave()); } catch (e) { return false; } })();
 async function videosDir(create) {
   const root = await navigator.storage.getDirectory();
   return root.getDirectoryHandle('videos', { create: !!create });
@@ -190,7 +193,7 @@ async function importFiles(files) {
     let free = null;
     try {
       const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
-      if (est && est.quota) free = Math.max(0, est.quota - (est.usage || 0));
+      if (est && est.quota && !(await braveP)) free = Math.max(0, est.quota - (est.usage || 0));
     } catch (e) { }
     const have = await dbAll('videos');
     for (let i = 0; i < files.length; i++) {
@@ -417,7 +420,8 @@ async function showStorage() {
   if (metas.length) text = '動画 ' + metas.length + ' 本・合わせて ' + fmtSize(total);
   try {
     const e = await navigator.storage.estimate();
-    if (e && e.quota) {
+    if (await braveP) text += (text ? ' ／ ' : '') + 'Brave では空きの目安が出せません（入らないときは、取りこみの途中で止まります）';
+    else if (e && e.quota) {
       text += (text ? ' ／ ' : '') + 'あと ' + fmtSize(Math.max(0, e.quota - (e.usage || 0))) + ' しまえます（目安）';
       frac = Math.max(0, Math.min(1, (e.usage || 0) / e.quota));
     }
