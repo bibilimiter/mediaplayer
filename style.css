@@ -31,9 +31,6 @@ body { -webkit-text-size-adjust: 100%; user-select: none; -webkit-user-select: n
 .notice.warn { background: #4a2a12; border-color: #d97706; white-space: pre-line; }
 .prog { flex: 1 1 160px; height: 8px; background: rgba(0,0,0,.4); border-radius: 4px; overflow: hidden; }
 .prog i { display: block; height: 100%; width: 0; background: var(--accent); }
-/* 終わりの見えない待ち（ファイルを受け取っている間）：左右に動く帯 */
-.prog.wait i { width: 30%; animation: waitMove 1.4s ease-in-out infinite alternate; }
-@keyframes waitMove { from { transform: translateX(0); } to { transform: translateX(233%); } }
 .hint { margin: 16px; color: var(--sub); line-height: 1.7; white-space: pre-line; }
 .small { margin: 16px; color: var(--sub); font-size: 13px; }
 
@@ -260,4 +257,3 @@ label.btn.addsub { display: flex; }
   opacity: 0; transition: opacity .25s; z-index: 2; }
 .minibar i { display: block; height: 100%; width: 100%; background: rgba(255,255,255,.9); transform-origin: left center; transform: scaleX(0); }
 #player.hidectl.minion .minibar { opacity: 1; }
-#waitText { white-space: pre-line; }

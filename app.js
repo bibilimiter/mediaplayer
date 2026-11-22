@@ -246,35 +246,10 @@ async function importFiles(files) {
   if (failed.length) showMsg('取りこめなかったファイルがあります。\n' + failed.join('\n'));
   await renderLibrary();
 }
-// ファイルを選んで「開く」を押してから、ファイルが届くまでの待ち
-// iPad は、PC の共有フォルダ（SMB）やクラウドのファイルを、まず iPad の中に丸ごと写してから渡してくる。
-// 写している間は何も起きないので、待っていることと、かかった時間を出しておく
-let waitTimer = 0;
-function waitStart() {
-  waitStop();
-  const t0 = Date.now();
-  const tick = () => {
-    const sec = Math.floor((Date.now() - t0) / 1000);
-    $('waitText').textContent = 'ファイルが届くのを待っています（' + (sec >= 60 ? Math.floor(sec / 60) + '分' : '') + (sec % 60) + '秒）。\n'
-      + 'PC の共有フォルダから直接選ぶと、iPad の選ぶ画面が止まって「開く」が効かないことがあります。\n'
-      + 'そのときは選ぶ画面を閉じて、「ファイル」アプリで動画を「このiPad内」へコピーしてから、そこから選んでください'
-      + '（取りこめたら、「このiPad内」のコピーは消してかまいません）。';
-    if (sec >= 3600) waitStop();
-  };
-  tick();
-  $('waitBar').hidden = false;
-  waitTimer = setInterval(tick, 1000);
-}
-function waitStop() { clearInterval(waitTimer); waitTimer = 0; $('waitBar').hidden = true; }
-$('waitClose').onclick = waitStop;
-$('fileInput').addEventListener('click', () => { if (appleTouch) waitStart(); });
-$('fileInput').addEventListener('cancel', waitStop);   // 選ばずに閉じたとき（対応しているブラウザだけ）
-
 let importQueue = [];
 $('fileInput').onchange = async (ev) => {
   const files = Array.from(ev.target.files || []);
   ev.target.value = '';
-  waitStop();
   if (!files.length) {
     showMsg('ファイルが届きませんでした。PC の共有フォルダから選んだときは、「ファイル」アプリで先に動画を「このiPad内」へ写してから、そこから選んでみてください。');
     return;
