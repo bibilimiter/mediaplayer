@@ -670,12 +670,15 @@ $('speedBtn').onclick = (ev) => {
   showCtl(true);   // 選んでいる間はボタンを消さない
 };
 $('speedPanel').addEventListener('click', (ev) => ev.stopPropagation());
-$('fullBtn').onclick = () => {
+function toggleFull() {
   const el = $('player');
   if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-  else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
-  showCtl();
-};
+  else if (el.requestFullscreen || el.webkitRequestFullscreen) {
+    const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+    if (r && r.catch) r.catch(() => { });
+  }
+}
+$('fullBtn').onclick = () => { toggleFull(); showCtl(); };
 const seekEl = $('seek');
 // つまみを動かしている間は、場面の小さな絵と時間だけを出し、指をはなしたときに本体の動画を移す
 seekEl.addEventListener('input', () => {
@@ -692,13 +695,21 @@ seekEl.addEventListener('change', () => {
 // 画面の左半分を2回つづけて押すと10秒もどる、右半分を2回つづけて押すと10秒すすむ
 // 1回だけ押したときは、ボタンを出す／かくす（2回目が来ないか、少しだけ待ってから動く）
 const DOUBLE_MS = 320;
-let tapTimer = 0, lastTap = 0, lastSide = 0;
+// Windows（マウス）：画面を2回つづけて押す（ダブルクリック）と全画面にする。もう一度で元にもどる。指で押したときは、今までどおり
+let tapTimer = 0, lastTap = 0, lastSide = 0, lastPointer = '';
+$('player').addEventListener('pointerdown', (ev) => { lastPointer = ev.pointerType; }, true);
 $('stage').addEventListener('click', (ev) => {
   if (Date.now() - volSwipeEnd < 500) return;   // 上下になぞって音量を変えたあとの「押した」は、なかったことにする
   if (panelOpen()) { closePanels(); showCtl(); return; }   // 一覧が出ているときは、閉じるだけ
   const now = Date.now();
   const side = ev.clientX < window.innerWidth / 2 ? -1 : 1;
-  if (side === lastSide && now - lastTap < DOUBLE_MS) {
+  if (lastPointer === 'mouse' && !appleTouch) {
+    if (now - lastTap < DOUBLE_MS) {
+      clearTimeout(tapTimer); tapTimer = 0; lastTap = 0;
+      toggleFull(); showCtl();
+      return;
+    }
+  } else if (side === lastSide && now - lastTap < DOUBLE_MS) {
     clearTimeout(tapTimer); tapTimer = 0;
     lastTap = now;   // つづけて押せば、さらに10秒ずつ動く
     skip(side * 10);
