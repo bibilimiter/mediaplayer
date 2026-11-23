@@ -127,6 +127,9 @@ html.iosapp { --topx: 40px; }
   text-align: center; white-space: pre-line; color: #fff; font-weight: 600; line-height: 1.35; pointer-events: none; z-index: 3;
   text-shadow: 0 0 3px #000, 0 0 3px #000, 1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000; transition: bottom .2s; }
 #player:not(.hidectl) .subtext { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 140px); }
+/* 絵の字幕（PGS）：動画の絵の上に、元の位置で重ねる */
+.subpic { position: absolute; pointer-events: none; }
+.subpic img { position: absolute; display: block; }
 .subtext.sz-s { font-size: clamp(16px, 2.2vw, 24px); }
 .subtext.sz-m { font-size: clamp(20px, 3vw, 32px); }
 .subtext.sz-l { font-size: clamp(26px, 4vw, 44px); }
