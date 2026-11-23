@@ -1,7 +1,7 @@
 // MediaPlayer のサービスワーカー：画面の部品をしまっておき、ネットがなくても開けるようにする
 // 画面の部品を直したときは、VERSION の数を上げる（新しいものに入れかわる）。アプリの版数はここだけで決める（棚の下にも出る）
-const VERSION = 'mp-v22';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'store-worker.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-180.png'];
+const VERSION = 'mp-v23';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'store-worker.js', 'mkv-worker.js', 'mkv-subs.mjs', 'lib/mediabunny.min.mjs', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-180.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
