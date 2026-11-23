@@ -86,7 +86,7 @@ function saveMkv(id, file, onProgress) {
     w.onmessage = (ev) => {
       const m = ev.data;
       if (m.progress != null) onProgress(m.stage, m.progress);
-      else if (m.done) { w.terminate(); ok({ subs: m.subs || [], notes: m.notes || [] }); }
+      else if (m.done) { w.terminate(); ok({ subs: m.subs || [], pics: m.pics || [], notes: m.notes || [] }); }
       else if (m.error) { w.terminate(); ng(Object.assign(new Error(m.error.message), { name: m.error.name })); }
     };
     w.onerror = (ev) => { w.terminate(); ng(new Error(ev.message || '取りこみの係が止まりました')); };
@@ -94,16 +94,23 @@ function saveMkv(id, file, onProgress) {
   });
 }
 // MKV の中の字幕を、字幕ファイルと同じ形（meta.subs）にする。日本語を先に、次に「ふだん使う」印のものを並べる
-function mkvSubs(list) {
+// 絵の字幕（pics）は、絵が多いので、取りこんだ動画では動画の情報とは別の所（blobs の「<id>#pgs<番号>」）にしまう
+function mkvSubs(list, pics, id) {
   const rank = (x) => (langName(x.lang) === '日本語' ? 0 : 2) + (x.def ? 0 : 1);
-  const out = list.slice().sort((a, b) => rank(a) - rank(b)).map((x, i) => ({
-    file: 'mkv#' + x.num, label: (langName(x.lang) || x.name || '字幕' + (i + 1)) + (x.forced ? '（一部だけ）' : ''), name: x.name, cues: x.cues }));
+  const all = list.concat((pics || []).map((x) => Object.assign({}, x, { pic: true })));
+  const out = all.sort((a, b) => rank(a) - rank(b)).map((x, i) => {
+    const y = { file: 'mkv#' + x.num, label: (langName(x.lang) || x.name || '字幕' + (i + 1)) + (x.forced ? '（一部だけ）' : ''), name: x.name };
+    if (!x.pic) y.cues = x.cues;
+    else if (id) { y.pic = id + '#pgs' + x.num; y.picCues = x.cues; }   // picCues は、しまったあとで消す
+    else y.picCues = x.cues;   // 保存せずに再生：いま見ている間だけ使う
+    return y;
+  });
   // 同じ名前（日本語が2つなど）は、付いている名前か番号で見分ける
   for (const x of out) {
     const same = out.filter((y) => y.label === x.label);
     if (same.length > 1) same.forEach((y, j) => { y.label += '（' + (y.name && y.name !== y.label ? y.name : j + 1) + '）'; });
   }
-  return out.map(({ file, label, cues }) => ({ file, label, cues }));
+  return out.map(({ name, ...y }) => y);
 }
 async function saveBody(id, file, onProgress) {
   if (canOpfs) {
@@ -125,6 +132,7 @@ async function loadBody(meta) {
   return b;
 }
 async function deleteBody(meta) {
+  for (const x of meta.subs || []) if (x.pic) { try { await dbDel('blobs', x.pic); } catch (e) { } }   // 絵の字幕
   if (meta.store === 'opfs') { try { await (await videosDir()).removeEntry(meta.id); } catch (e) { } }
   else await dbDel('blobs', meta.id);
 }
@@ -252,10 +260,11 @@ async function importFiles(files) {
           const r = await saveMkv(id, f, (stage, p) => show(stage === 'subs' ? '中の字幕を探しています ' + Math.floor(p * 100) + '%'
             : 'MP4 に詰め替えています ' + Math.floor(p * 100) + '%', stage === 'subs' ? 1 : p));
           store = 'opfs';
-          subs = mkvSubs(r.subs);
+          subs = mkvSubs(r.subs, r.pics, id);
+          for (const x of subs) if (x.pic) { await dbPut('blobs', x.pic, x.picCues); delete x.picCues; }
           show('調べています', 1);
           try { info = await probe(await loadBody({ id, store })); if (!info.w) throw new Error(); }
-          catch (e) { await deleteBody({ id, store }); throw new Error('MP4 に詰め替えましたが、この端末では再生できない形式でした'); }
+          catch (e) { await deleteBody({ id, store, subs }); throw new Error('MP4 に詰め替えましたが、この端末では再生できない形式でした'); }
           if (r.notes.length) notes.push('・' + f.name + '：取りこみました。' + r.notes.join(''));
         } else {
           show('調べています', 0);
@@ -330,8 +339,8 @@ async function playDirect(files) {
       $('importBar').hidden = false; $('importText').textContent = '中の字幕を探しています：' + f.name; $('importProg').style.width = '0%';
       const { extractSubs } = await import('./mkv-subs.mjs');
       const r = await extractSubs(f, (p) => { $('importProg').style.width = Math.round(p * 100) + '%'; });
-      meta.subs = mkvSubs(r.subs);
-      if (r.images && !r.subs.length) failed.push('・中の字幕は絵の字幕のため、出せません。');
+      meta.subs = mkvSubs(r.subs, r.pics, null);
+      if (r.images && !r.subs.length && !r.pics.length) failed.push('・中の字幕は DVD などの絵の字幕のため、出せません。');
     } catch (e) { failed.push('・中の字幕は読めませんでした。'); }
     finally { $('importBar').hidden = true; }
   }
@@ -942,7 +951,7 @@ let subSel = null, subShown = '', subRaf = 0, subOff = 0;
 let subSize = loadJson('mp_subsize', 'm');
 function subSources() {
   const list = [];
-  (cur && cur.subs || []).forEach((x, i) => list.push({ key: 'f' + i, label: x.label, cues: x.cues }));
+  (cur && cur.subs || []).forEach((x, i) => list.push(x.pic || x.picCues ? { key: 'f' + i, label: x.label, pic: x } : { key: 'f' + i, label: x.label, cues: x.cues }));
   const tt = video.textTracks;
   if (tt) for (let i = 0; i < tt.length; i++) {
     const t = tt[i];
@@ -957,8 +966,48 @@ function selectSub(key, save) {
   subSel = key ? subSources().find((x) => x.key === key) || null : null;
   if (subSel && subSel.track) { subSel.track.mode = 'hidden'; subSel.track.oncuechange = renderSub; }   // 自分で出すので、ブラウザには出させない
   if (save && cur) saveJson('mp_sub_' + cur.id, key || 'off');
-  subShown = null; renderSub();
+  subShown = null; picShown = -2; renderSub();
+  // 絵の字幕：しまってある絵を読みこんでから出す
+  const sel = subSel;
+  if (sel && sel.pic && !sel.cues) {
+    (sel.pic.picCues ? Promise.resolve(sel.pic.picCues) : dbGet('blobs', sel.pic.pic)).then((c) => {
+      sel.cues = c || [];
+      if (subSel === sel) { picShown = -2; renderSub(); }
+    }).catch(() => { });
+  }
 }
+// 絵の字幕を、動画の絵の上の、元の位置に重ねて出す
+let picShown = -2, picUrls = [];
+function clearPic() { for (const u of picUrls) URL.revokeObjectURL(u); picUrls = []; $('subPic').textContent = ''; $('subPic').hidden = true; picShown = -2; }
+function layoutPic(c) {
+  const box = $('subPic'), vw = video.clientWidth, vh = video.clientHeight;
+  const W = c.w || video.videoWidth || vw, H = c.h || video.videoHeight || vh;
+  const sc = Math.min(vw / W, vh / H);
+  Object.assign(box.style, { left: (vw - W * sc) / 2 + 'px', top: (vh - H * sc) / 2 + 'px', width: W * sc + 'px', height: H * sc + 'px' });
+  for (const [k, it] of c.items.entries()) {
+    const im = box.children[k];
+    if (im) Object.assign(im.style, { left: it.x / W * 100 + '%', top: it.y / H * 100 + '%', width: it.w / W * 100 + '%', height: it.h / H * 100 + '%' });
+  }
+}
+function renderPic() {
+  const c = subSel.cues || [], t = video.currentTime - subOff;
+  let lo = 0, hi = c.length - 1, k = -1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (c[mid].s <= t) { k = mid; lo = mid + 1; } else hi = mid - 1; }
+  if (k >= 0 && !(c[k].e > t)) k = -1;
+  if (k === picShown) return;
+  clearPic();
+  picShown = k;
+  if (k < 0) return;
+  for (const it of c[k].items) {
+    const im = document.createElement('img');
+    const u = URL.createObjectURL(it.blob); picUrls.push(u);
+    im.src = u; im.alt = '';
+    $('subPic').appendChild(im);
+  }
+  layoutPic(c[k]);
+  $('subPic').hidden = false;
+}
+window.addEventListener('resize', () => { if (subSel && subSel.pic && picShown >= 0) layoutPic(subSel.cues[picShown]); });
 function applySavedSub() {
   if (!cur) return;
   const saved = loadJson('mp_sub_' + cur.id, null);
@@ -979,6 +1028,12 @@ function trackCues(track) {
   } catch (e) { return null; }
 }
 function renderSub() {
+  if (subSel && subSel.pic) {
+    if (subShown !== '') { subShown = ''; $('subText').textContent = ''; $('subText').hidden = true; }
+    renderPic();
+    return;
+  }
+  if (picShown !== -2) clearPic();
   let text = '';
   const cues = subSel && (subSel.cues || trackCues(subSel.track));
   if (cues) {

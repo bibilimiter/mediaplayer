@@ -59,14 +59,14 @@ self.onmessage = async (ev) => {
     access.close(); access = null;
 
     // 文字の字幕を取り出す（失敗しても、動画の取りこみは続ける）
-    let subs = [], images = 0;
+    let subs = [], pics = [], images = 0;
     try {
       const r = await extractSubs(file, (p) => self.postMessage({ id, stage: 'subs', progress: p }));
-      subs = r.subs; images = r.images;
+      subs = r.subs; pics = r.pics; images = r.images;
     } catch (e) { notes.push('中の字幕は読めませんでした。'); }
-    if (images && !subs.length) notes.push('中の字幕は絵の字幕のため、付けられませんでした（.srt の字幕ファイルなら付けられます）。');
-    else if (images) notes.push('絵の字幕ははぶきました。');
-    self.postMessage({ id, done: true, subs, notes });
+    if (images && !subs.length && !pics.length) notes.push('中の字幕は DVD などの絵の字幕のため、付けられませんでした（.srt の字幕ファイルなら付けられます）。');
+    else if (images) notes.push('DVD などの絵の字幕ははぶきました。');
+    self.postMessage({ id, done: true, subs, pics, notes });
   } catch (e) {
     try { if (access) access.close(); } catch (e2) { }
     try { if (dir) await dir.removeEntry(id); } catch (e2) { }
