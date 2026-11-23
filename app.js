@@ -981,6 +981,7 @@ function selectSub(key, save) {
 }
 // 絵の字幕を、動画の絵の上の、元の位置に重ねて出す
 let picShown = -2, picUrls = [];
+const PIC_SCALE = { s: 0.75, m: 1, l: 1.35 };
 function clearPic() { for (const u of picUrls) URL.revokeObjectURL(u); picUrls = []; $('subPic').textContent = ''; $('subPic').hidden = true; picShown = -2; }
 function layoutPic(c) {
   const box = $('subPic'), vw = video.clientWidth, vh = video.clientHeight;
@@ -991,7 +992,12 @@ function layoutPic(c) {
   Object.assign(box.style, { left: (vw - cw) / 2 + 'px', top: (vh - ch) / 2 + 'px', width: cw + 'px', height: ch + 'px' });
   for (const [k, it] of c.items.entries()) {
     const im = box.children[k];
-    if (im) Object.assign(im.style, { left: it.x / W * 100 + '%', top: it.y / H * 100 + '%', width: it.w / W * 100 + '%', height: it.h / H * 100 + '%' });
+    if (!im) continue;
+    // 字幕の大きさ（小・中・大）：中が元の大きさ。下の方の字幕は下の端、上の方の字幕は上の端をそろえたまま大きさを変える
+    const zk = PIC_SCALE[subSize] || 1, w = Math.min(W, it.w * zk), h = it.h * (w / it.w);
+    const x = Math.max(0, Math.min(W - w, it.x + it.w / 2 - w / 2));
+    const y = it.y + it.h / 2 > H / 2 ? Math.max(0, it.y + it.h - h) : Math.min(H - h, it.y);
+    Object.assign(im.style, { left: x / W * 100 + '%', top: y / H * 100 + '%', width: w / W * 100 + '%', height: h / H * 100 + '%' });
   }
 }
 function renderPic() {
@@ -1063,6 +1069,7 @@ video.addEventListener('timeupdate', renderSub);
 function setSubSize(v) {
   subSize = v; saveJson('mp_subsize', v);
   $('subText').className = 'subtext sz-' + v;
+  if (subSel && subSel.pic && picShown >= 0 && subSel.cues) layoutPic(subSel.cues[picShown]);   // 絵の字幕も大きさを変える
 }
 
 // ---------------- 音声の切り替え（日本語・英語など、音声が2つ以上入っている動画） ----------------
