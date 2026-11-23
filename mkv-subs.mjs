@@ -6,6 +6,7 @@ const READ = 4 * 1024 * 1024;   // いちどに読む量
 const ID = {
   SEGMENT: 0x18538067, INFO: 0x1549A966, SCALE: 0x2AD7B1, TRACKS: 0x1654AE6B, ENTRY: 0xAE, NUMBER: 0xD7,
   CODEC: 0x86, LANG: 0x22B59C, LANG_BCP: 0x22B59D, NAME: 0x536E, DEFAULT: 0x88, FORCED: 0x55AA, CODEC_PRIVATE: 0x63A2,
+  ENCODINGS: 0x6D80, ENCODING: 0x6240, COMPRESSION: 0x5034, COMP_ALGO: 0x4254, COMP_SETTINGS: 0x4255,
   CLUSTER: 0x1F43B675, TIME: 0xE7, SIMPLE: 0xA3, GROUP: 0xA0, BLOCK: 0xA1, DURATION: 0x9B,
 };
 const TEXT_CODECS = ['S_TEXT/UTF8', 'S_TEXT/ASS', 'S_TEXT/SSA', 'S_ASS', 'S_SSA'];
@@ -71,7 +72,7 @@ function parseTracks(body) {
   const list = [];
   for (const e of children(body)) {
     if (e.id !== ID.ENTRY) continue;
-    const t = { num: 0, codec: '', lang: '', name: '', def: false, forced: false, priv: '' };
+    const t = { num: 0, codec: '', lang: '', name: '', def: false, forced: false, priv: '', comp: null };
     for (const c of children(e.body)) {
       if (c.id === ID.NUMBER) t.num = uint(c.body);
       else if (c.id === ID.CODEC) t.codec = str(c.body);
@@ -81,6 +82,14 @@ function parseTracks(body) {
       else if (c.id === ID.DEFAULT) t.def = !!uint(c.body);
       else if (c.id === ID.FORCED) t.forced = !!uint(c.body);
       else if (c.id === ID.CODEC_PRIVATE) t.priv = str(c.body);
+      else if (c.id === ID.ENCODINGS) {
+        // 字幕が縮めて（圧縮して）しまってあるとき：zlib（0）か、先頭を省いたもの（3）
+        for (const en of children(c.body)) if (en.id === ID.ENCODING) for (const x of children(en.body)) if (x.id === ID.COMPRESSION) {
+          const comp = { algo: 0, head: new Uint8Array(0) };
+          for (const y of children(x.body)) { if (y.id === ID.COMP_ALGO) comp.algo = uint(y.body); else if (y.id === ID.COMP_SETTINGS) comp.head = y.body.slice(); }
+          t.comp = comp;
+        }
+      }
     }
     list.push(t);
   }
@@ -98,6 +107,13 @@ function cleanText(s, ass) {
   if (ass) s = assText(s).replace(/\{[^}]*\}/g, '').replace(/\\N/g, '\n').replace(/\\n/g, '\n').replace(/\\h/g, ' ');
   return s.replace(/\r\n?/g, '\n').replace(/<[^>]+>/g, '').replace(/\{\\[^}]*\}/g, '')
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').trim();
+}
+
+async function unpack(b, comp) {
+  if (!comp) return b;
+  if (comp.algo === 3) { const o = new Uint8Array(comp.head.length + b.length); o.set(comp.head); o.set(b, comp.head.length); return o; }
+  if (comp.algo === 0) return new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+  throw new Error('この縮め方の字幕は読めません');
 }
 
 // もどり値：{ subs: [{ num, lang, name, def, forced, cues: [{ s, e, t }] }], images: 絵の字幕の数 }
@@ -143,7 +159,7 @@ export async function extractSubs(file, onProgress) {
         if (t && h.size < 1024 * 1024 && (await r.need(h.data, h.size))) {
           let rel = (r.at(h.data + len) << 8) | r.at(h.data + len + 1);
           if (rel & 0x8000) rel -= 0x10000;
-          const text = cleanText(new TextDecoder().decode(r.bytes(h.data + len + 3, h.size - len - 3)), t.ass);
+          const text = cleanText(new TextDecoder().decode(await unpack(r.bytes(h.data + len + 3, h.size - len - 3).slice(), t.comp)), t.ass);
           const s = (clusterTs + rel) * scale / 1e9;
           if (text) { lastCue = { s, e: -1, t: text }; t.cues.push(lastCue); }
         }

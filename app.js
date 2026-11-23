@@ -324,6 +324,17 @@ async function playDirect(files) {
   const meta = { id: directId(f), name: baseName(f.name), file: f.name, size: f.size, type: f.type || 'video/mp4',
     duration: 0, w: 0, h: 0, thumb: '', thumbOk: true, store: 'direct', folder: '', subs: [], direct: true, body: f };
   const failed = [];
+  // MKV：中の文字の字幕を取り出す（パソコンのブラウザは、MKV の中の字幕を自分では出さない）
+  if (MKV_RE.test(f.name)) {
+    try {
+      $('importBar').hidden = false; $('importText').textContent = '中の字幕を探しています：' + f.name; $('importProg').style.width = '0%';
+      const { extractSubs } = await import('./mkv-subs.mjs');
+      const r = await extractSubs(f, (p) => { $('importProg').style.width = Math.round(p * 100) + '%'; });
+      meta.subs = mkvSubs(r.subs);
+      if (r.images && !r.subs.length) failed.push('・中の字幕は絵の字幕のため、出せません。');
+    } catch (e) { failed.push('・中の字幕は読めませんでした。'); }
+    finally { $('importBar').hidden = true; }
+  }
   for (const sf of subFiles) {
     try { await addSubTo(meta, sf); } catch (e) { failed.push('・' + sf.name + '：' + errText(e)); }
   }
