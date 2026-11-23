@@ -340,7 +340,7 @@ async function playDirect(files) {
       const { extractSubs } = await import('./mkv-subs.mjs');
       const r = await extractSubs(f, (p) => { $('importProg').style.width = Math.round(p * 100) + '%'; });
       meta.subs = mkvSubs(r.subs, r.pics, null);
-      if (r.images && !r.subs.length && !r.pics.length) failed.push('・中の字幕は DVD などの絵の字幕のため、出せません。');
+      if (r.images && !r.subs.length && !r.pics.length) failed.push('・中の字幕は、この版では出せない形の絵の字幕（' + [...new Set(r.imageNames)].join('・') + '）のため、出せません。');
     } catch (e) { failed.push('・中の字幕は読めませんでした。'); }
     finally { $('importBar').hidden = true; }
   }
@@ -649,6 +649,8 @@ async function openPlayer(meta) {
   catch (e) { showMsg('「' + meta.name + '」を開けませんでした：' + errText(e)); return; }
   cur = meta;
   curUrl = URL.createObjectURL(body);
+  pcAud = null;
+  loadPcAudio(meta, body);
   $('title').textContent = meta.name;
   $('library').hidden = true; $('player').hidden = false;
   $('loading').hidden = false;
@@ -692,6 +694,7 @@ function closePlayer() {
   video.pause();
   video.removeAttribute('src'); video.load();
   if (curUrl) URL.revokeObjectURL(curUrl);
+  clearPcAudio();
   if (cur && cur.direct) cur.body = null;
   cur = null; curUrl = '';
   closePanels();
@@ -982,8 +985,10 @@ function clearPic() { for (const u of picUrls) URL.revokeObjectURL(u); picUrls =
 function layoutPic(c) {
   const box = $('subPic'), vw = video.clientWidth, vh = video.clientHeight;
   const W = c.w || video.videoWidth || vw, H = c.h || video.videoHeight || vh;
-  const sc = Math.min(vw / W, vh / H);
-  Object.assign(box.style, { left: (vw - W * sc) / 2 + 'px', top: (vh - H * sc) / 2 + 'px', width: W * sc + 'px', height: H * sc + 'px' });
+  // 字幕の画面（DVD なら 720×480 など）を、いま見えている動画の絵の範囲にあわせて広げる（横長の DVD は横にのばす）
+  const iw = video.videoWidth || W, ih = video.videoHeight || H;
+  const sc = Math.min(vw / iw, vh / ih), cw = iw * sc, ch = ih * sc;
+  Object.assign(box.style, { left: (vw - cw) / 2 + 'px', top: (vh - ch) / 2 + 'px', width: cw + 'px', height: ch + 'px' });
   for (const [k, it] of c.items.entries()) {
     const im = box.children[k];
     if (im) Object.assign(im.style, { left: it.x / W * 100 + '%', top: it.y / H * 100 + '%', width: it.w / W * 100 + '%', height: it.h / H * 100 + '%' });
@@ -1066,6 +1071,75 @@ function audioTracks() {
   if (!at || at.length < 2) return [];
   return Array.from({ length: at.length }, (_, i) => at[i]);
 }
+// パソコンのブラウザ（Brave・Chrome など）は、動画の中の音声を切り替える仕組みが使えない。
+// そこで、選んだ音声だけを入れた動画を一時的に作って差し替える（audio-worker.js。中身はそのままなので、画質は変わらない）
+const noAudioApi = !('audioTracks' in HTMLMediaElement.prototype);
+let pcAud = null;   // { list: [{ lang, name, codec }], cur: いま鳴っている番号, url, busy }
+function audioWorker(msg, onProgress) {
+  return new Promise((ok, ng) => {
+    let w;
+    try { w = new Worker('audio-worker.js', { type: 'module' }); } catch (e) { ng(e); return; }
+    w.onmessage = (ev) => {
+      const m = ev.data;
+      if (m.progress != null) { if (onProgress) onProgress(m.progress); }
+      else if (m.error) { w.terminate(); ng(new Error(m.error)); }
+      else { w.terminate(); ok(m); }
+    };
+    w.onerror = (ev) => { w.terminate(); ng(new Error(ev.message || '音声の切り替えの係が止まりました')); };
+    w.postMessage(msg);
+  });
+}
+async function loadPcAudio(meta, body) {
+  if (!noAudioApi || !canOpfs) return;
+  try {
+    const r = await audioWorker({ cmd: 'list', file: body });
+    if (cur !== meta || r.list.length < 2) return;
+    pcAud = { list: r.list, cur: 0, url: '', busy: false, body };
+    const ai = loadJson('mp_aud_' + meta.id, null);
+    if (ai) switchPcAudio(ai, false);
+  } catch (e) { }
+}
+async function switchPcAudio(i, save) {
+  const a = pcAud, meta = cur;
+  if (!a || a.busy || i === a.cur || !a.list[i]) return;
+  a.busy = true;
+  if (save && meta) saveJson('mp_aud_' + meta.id, i);
+  const wasPaused = video.paused;
+  video.pause();
+  $('loading').hidden = false; $('loading').textContent = '音声を切り替えています…';
+  try {
+    let url = curUrl;
+    if (i !== 0) {
+      const r = await audioWorker({ cmd: 'make', file: a.body, index: i }, (p) => { $('loading').textContent = '音声を切り替えています ' + Math.floor(p * 100) + '%'; });
+      if (cur !== meta) return;
+      const f = await (await (await videosDir(true)).getFileHandle(r.name)).getFile();
+      if (a.url) URL.revokeObjectURL(a.url);
+      a.url = url = URL.createObjectURL(f);
+    }
+    const t = video.currentTime;
+    video.src = url;
+    await once(video, 'loadedmetadata', 20000);
+    video.currentTime = t;
+    video.defaultPlaybackRate = speed; video.playbackRate = speed;
+    a.cur = i;
+    if (!wasPaused) video.play().catch(() => { });
+    flashMark('音声：' + pcAudLabel(a.list[i], i));
+  } catch (e) {
+    showMsg('音声を切り替えられませんでした：' + errText(e));
+    if (!wasPaused) video.play().catch(() => { });
+  } finally {
+    a.busy = false;
+    $('loading').hidden = true; $('loading').textContent = '読みこんでいます…';
+    if (!$('subPanel').hidden) buildSubPanel();
+  }
+}
+function pcAudLabel(x, i) { return x.name || langName(x.lang) || '音声 ' + (i + 1); }
+async function clearPcAudio() {
+  if (!pcAud) return;
+  if (pcAud.url) URL.revokeObjectURL(pcAud.url);
+  pcAud = null;
+  try { await (await videosDir()).removeEntry('_audio_tmp'); } catch (e) { }
+}
 function selectAudio(i, save) {
   const list = audioTracks();
   if (!list[i]) return;
@@ -1100,9 +1174,16 @@ function buildSubPanel() {
   $('compBtn').textContent = '小さな音を聞きやすく：' + (comp ? 'オン' : 'オフ');
   $('compBtn').className = 'btn' + (comp ? ' primary' : '');
   const at = audioTracks();
-  $('audioBox').hidden = !at.length;
+  $('audioBox').hidden = !at.length && !pcAud;
   const al = $('audioList');
   al.textContent = '';
+  if (pcAud) pcAud.list.forEach((x, i) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (pcAud.cur === i ? ' primary' : '');
+    b.textContent = pcAudLabel(x, i);
+    b.onclick = (ev) => { ev.stopPropagation(); closePanels(); switchPcAudio(i, true); };
+    al.appendChild(b);
+  });
   at.forEach((t, i) => {
     const b = document.createElement('button');
     b.className = 'btn' + (t.enabled ? ' primary' : '');
