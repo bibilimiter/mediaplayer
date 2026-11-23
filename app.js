@@ -11,7 +11,8 @@ const ICON_PAUSE = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path
 
 const $ = (id) => document.getElementById(id);
 const VIDEO_RE = /\.(mp4|m4v|mov|webm)$/i;
-const OTHER_VIDEO_RE = /\.(mkv|avi|wmv|flv|ts|m2ts|mts|mpg|mpeg|vob|iso|rmvb|3gp)$/i;   // iPad では再生できない形式
+const MKV_RE = /\.mkv$/i;   // MKV は、取りこむときに MP4 に詰め替える（mkv-worker.js）
+const OTHER_VIDEO_RE = /\.(avi|wmv|flv|ts|m2ts|mts|mpg|mpeg|vob|iso|rmvb|3gp)$/i;   // iPad では再生できない形式
 const SPACE_MARGIN = 200 * 1024 * 1024;   // 空きの目安から、念のため残しておく量
 const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
 const THUMB_W = 480;                 // 棚の絵の幅（画素）
@@ -75,6 +76,34 @@ function saveToOpfs(id, file, onProgress) {
     w.onerror = (ev) => { w.terminate(); ng(new Error(ev.message || '取りこみの係が止まりました')); };
     w.postMessage({ id, file });
   });
+}
+// MKV を MP4 に詰め替えてしまう。もどり値は { subs: 中の文字の字幕, notes: お知らせ }
+function saveMkv(id, file, onProgress) {
+  return new Promise((ok, ng) => {
+    if (!canOpfs) { ng(new Error('この端末のブラウザでは MKV を取りこめません')); return; }
+    let w;
+    try { w = new Worker('mkv-worker.js', { type: 'module' }); } catch (e) { ng(new Error('この端末のブラウザでは MKV を取りこめません')); return; }
+    w.onmessage = (ev) => {
+      const m = ev.data;
+      if (m.progress != null) onProgress(m.stage, m.progress);
+      else if (m.done) { w.terminate(); ok({ subs: m.subs || [], notes: m.notes || [] }); }
+      else if (m.error) { w.terminate(); ng(Object.assign(new Error(m.error.message), { name: m.error.name })); }
+    };
+    w.onerror = (ev) => { w.terminate(); ng(new Error(ev.message || '取りこみの係が止まりました')); };
+    w.postMessage({ id, file });
+  });
+}
+// MKV の中の字幕を、字幕ファイルと同じ形（meta.subs）にする。日本語を先に、次に「ふだん使う」印のものを並べる
+function mkvSubs(list) {
+  const rank = (x) => (langName(x.lang) === '日本語' ? 0 : 2) + (x.def ? 0 : 1);
+  const out = list.slice().sort((a, b) => rank(a) - rank(b)).map((x, i) => ({
+    file: 'mkv#' + x.num, label: (langName(x.lang) || x.name || '字幕' + (i + 1)) + (x.forced ? '（一部だけ）' : ''), name: x.name, cues: x.cues }));
+  // 同じ名前（日本語が2つなど）は、付いている名前か番号で見分ける
+  for (const x of out) {
+    const same = out.filter((y) => y.label === x.label);
+    if (same.length > 1) same.forEach((y, j) => { y.label += '（' + (y.name && y.name !== y.label ? y.name : j + 1) + '）'; });
+  }
+  return out.map(({ file, label, cues }) => ({ file, label, cues }));
 }
 async function saveBody(id, file, onProgress) {
   if (canOpfs) {
@@ -185,7 +214,7 @@ let importing = false;
 async function importFiles(files) {
   if (importing || !files.length) return;
   importing = true;
-  const failed = [], added = [];
+  const failed = [], added = [], notes = [];
   const subFiles = files.filter(isSubFile);
   files = files.filter((f) => !isSubFile(f));
   try {
@@ -207,20 +236,35 @@ async function importFiles(files) {
       };
       try {
         if (OTHER_VIDEO_RE.test(f.name)) throw new Error('この形式（' + f.name.replace(/^.*\./, '').toUpperCase() + '）は iPad では再生できません。パソコンで MP4 に変えてから取りこんでください');
-        if (!VIDEO_RE.test(f.name) && !/^video\//.test(f.type)) throw new Error('動画ファイルではないようです');
+        const mkv = MKV_RE.test(f.name);
+        if (!mkv && !VIDEO_RE.test(f.name) && !/^video\//.test(f.type)) throw new Error('動画ファイルではないようです');
         // 同じ動画（名前と大きさが同じ）が、もう入っていれば取りこまない
         const dup = have.concat(added).find((m) => m.file === f.name && m.size === f.size);
         if (dup) throw new Error('もう入っています（' + (dup.folder ? 'フォルダ「' + dup.folder + '」の中の ' : '') + '「' + dup.name + '」）');
         if (free != null && f.size > free - SPACE_MARGIN) {
           throw new Error('端末の空きが足りません（この動画 ' + fmtSize(f.size) + '、空きの目安 ' + (free - SPACE_MARGIN > 1048576 ? fmtSize(free - SPACE_MARGIN) : 'ほぼなし') + '）。見終わった動画を消すと空きができます');
         }
-        show('調べています', 0);
-        const info = await probe(f);
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-        show('取りこんでいます 0%', 0);
-        const store = await saveBody(id, f, (p) => show('取りこんでいます ' + Math.floor(p * 100) + '%', p));
-        const meta = { id, name: baseName(f.name), file: f.name, size: f.size, type: f.type || 'video/mp4', added: Date.now(),
-          duration: info.duration, w: info.w, h: info.h, thumb: info.thumb, thumbOk: !!info.thumb, store, folder: curFolder || '', subs: [] };
+        let info, store, subs = [];
+        if (mkv) {
+          // MKV：先に MP4 へ詰め替えてしまい、しまったものを調べる（再生できなければ消す）
+          show('MP4 に詰め替えています 0%', 0);
+          const r = await saveMkv(id, f, (stage, p) => show(stage === 'subs' ? '中の字幕を探しています ' + Math.floor(p * 100) + '%'
+            : 'MP4 に詰め替えています ' + Math.floor(p * 100) + '%', stage === 'subs' ? 1 : p));
+          store = 'opfs';
+          subs = mkvSubs(r.subs);
+          show('調べています', 1);
+          try { info = await probe(await loadBody({ id, store })); if (!info.w) throw new Error(); }
+          catch (e) { await deleteBody({ id, store }); throw new Error('MP4 に詰め替えましたが、この端末では再生できない形式でした'); }
+          if (r.notes.length) notes.push('・' + f.name + '：取りこみました。' + r.notes.join(''));
+        } else {
+          show('調べています', 0);
+          info = await probe(f);
+          show('取りこんでいます 0%', 0);
+          store = await saveBody(id, f, (p) => show('取りこんでいます ' + Math.floor(p * 100) + '%', p));
+        }
+        const meta = { id, name: baseName(f.name), file: f.name, size: f.size, type: mkv ? 'video/mp4' : (f.type || 'video/mp4'), added: Date.now(),
+          duration: info.duration, w: info.w, h: info.h, thumb: info.thumb, thumbOk: !!info.thumb, store, folder: curFolder || '', subs };
         try { await dbPut('videos', id, meta); }
         catch (e) { await deleteBody(meta); throw e; }
         added.push(meta);
@@ -243,7 +287,7 @@ async function importFiles(files) {
     importing = false;
     $('importBar').hidden = true;
   }
-  if (failed.length) showMsg('取りこめなかったファイルがあります。\n' + failed.join('\n'));
+  if (failed.length || notes.length) showMsg((failed.length ? '取りこめなかったファイルがあります。\n' + failed.join('\n') : '') + (failed.length && notes.length ? '\n\n' : '') + notes.join('\n'));
   await renderLibrary();
 }
 let importQueue = [];
