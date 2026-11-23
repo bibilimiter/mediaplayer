@@ -1,6 +1,6 @@
 // MKV の中に入っている文字の字幕（SRT・ASS）を取り出す
 // MKV は「名前・大きさ・中身」の箱が入れ子になった作り。字幕の箱だけを拾い、ほかの箱（映像・音声）は飛ばす
-// 絵の字幕は、ブルーレイの PGS だけ取り出す（DVD の VobSub などは取り出せない）
+// 絵の字幕は、ブルーレイの PGS と DVD の VobSub を取り出す（テレビ放送の DVB などは取り出せない）
 
 const READ = 4 * 1024 * 1024;   // いちどに読む量
 const ID = {
@@ -233,12 +233,94 @@ class Pgs {
   }
 }
 
+// 点の並び（RGBA）を PNG の画像にする
+function toPng(px, w, h) {
+  const mk = (W, H) => (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(W, H) : Object.assign(document.createElement('canvas'), { width: W, height: H }));
+  const cv = mk(w, h);
+  cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(px.buffer), w, h), 0, 0);
+  return cv.convertToBlob ? cv.convertToBlob({ type: 'image/png' }) : new Promise((ok) => cv.toBlob(ok, 'image/png'));
+}
+
+// ---------------- 絵の字幕（VobSub：DVD の字幕） ----------------
+// 色は、トラックの情報（.idx と同じ文）にある16色の表から、字幕ごとに4色を選んで使う
+// 1回分の字幕の中に「いつ出すか・いつ消すか・どこに出すか・どの色か」と、4色の点の並び（1行おき）が入っている
+class VobSub {
+  constructor(idx) {
+    this.pal = [];
+    const m = /palette:\s*([0-9a-fA-F,\s]+)/.exec(idx || '');
+    if (m) this.pal = m[1].split(',').map((x) => parseInt(x.trim(), 16) || 0);
+    while (this.pal.length < 16) this.pal.push(this.pal.length % 2 ? 0xFFFFFF : 0x000000);
+    const sz = /size:\s*(\d+)\s*x\s*(\d+)/.exec(idx || '');
+    this.w = sz ? +sz[1] : 720; this.h = sz ? +sz[2] : 480;
+    this.list = [];
+  }
+  async push(t, b) {
+    if (b.length < 4) return;
+    const size = (b[0] << 8) | b[1];
+    let ctl = (b[2] << 8) | b[3];
+    if (size > b.length || ctl >= size) return;
+    let start = 0, stop = -1, col = [0, 1, 2, 3], alpha = [0, 15, 15, 15], x1 = 0, x2 = -1, y1 = 0, y2 = -1, top = 0, bot = 0, shown = false;
+    for (let guard = 0; guard < 32 && ctl + 4 <= size; guard++) {
+      const delay = ((b[ctl] << 8) | b[ctl + 1]) * 1024 / 90000, next = (b[ctl + 2] << 8) | b[ctl + 3];
+      let q = ctl + 4;
+      while (q < size) {
+        const cmd = b[q++];
+        if (cmd === 0xFF) break;
+        if (cmd === 0x00 || cmd === 0x01) { start = delay; shown = true; }
+        else if (cmd === 0x02) stop = delay;
+        else if (cmd === 0x03) { col = [b[q + 1] & 15, b[q + 1] >> 4, b[q] & 15, b[q] >> 4]; q += 2; }
+        else if (cmd === 0x04) { alpha = [b[q + 1] & 15, b[q + 1] >> 4, b[q] & 15, b[q] >> 4]; q += 2; }
+        else if (cmd === 0x05) {
+          x1 = (b[q] << 4) | (b[q + 1] >> 4); x2 = ((b[q + 1] & 15) << 8) | b[q + 2];
+          y1 = (b[q + 3] << 4) | (b[q + 4] >> 4); y2 = ((b[q + 4] & 15) << 8) | b[q + 5]; q += 6;
+        }
+        else if (cmd === 0x06) { top = (b[q] << 8) | b[q + 1]; bot = (b[q + 2] << 8) | b[q + 3]; q += 4; }
+        else if (cmd === 0x07) { q += Math.max(2, (b[q] << 8) | b[q + 1]); }   // 色を変える指示（ほとんど使われない）は飛ばす
+        else break;
+      }
+      if (next === ctl) break;
+      ctl = next;
+    }
+    const w = x2 - x1 + 1, h = y2 - y1 + 1;
+    if (!shown || w <= 0 || h <= 0 || w > 4096 || h > 4096) return;
+    const px = new Uint32Array(w * h);
+    const rgba = col.map((c, i) => {
+      const v = this.pal[c] || 0, a = Math.round(alpha[i] * 255 / 15);
+      return ((a << 24) | ((v & 0xFF) << 16) | (v & 0xFF00) | ((v >> 16) & 0xFF)) >>> 0;
+    });
+    // 1行おきに、上の行の組（top）と下の行の組（bot）から読む
+    for (const [field, off] of [[0, top], [1, bot]]) {
+      let nib = off * 2;
+      const get = () => { const v = (b[nib >> 1] >> ((nib & 1) ? 0 : 4)) & 15; nib++; return v; };
+      for (let y = field; y < h; y += 2) {
+        let x = 0;
+        while (x < w && (nib >> 1) < size) {
+          let v = get();
+          if (v < 0x4) { v = (v << 4) | get(); if (v < 0x10) { v = (v << 4) | get(); if (v < 0x40) v = (v << 4) | get(); } }
+          let n = v >> 2;
+          const c = rgba[v & 3];
+          if (n === 0) n = w - x;   // 行の終わりまで
+          for (let k = 0; k < n && x < w; k++) px[y * w + x++] = c;
+        }
+        if (nib & 1) nib++;   // 行の終わりは、1バイトの区切りにそろえる
+      }
+    }
+    const blob = await toPng(px, w, h);
+    this.list.push({ s: t + start, e: stop > start ? t + stop : -1, w: this.w, h: this.h, items: [{ x: x1, y: y1, w, h, blob }] });
+  }
+  cues() {
+    const c = this.list.sort((a, b) => a.s - b.s);
+    c.forEach((x, i) => { if (x.e <= x.s) x.e = Math.min(x.s + 5, i + 1 < c.length ? c[i + 1].s : x.s + 5); });
+    return c;
+  }
+}
+
 // もどり値：{ subs: 文字の字幕 [{ num, lang, name, def, forced, cues: [{ s, e, t }] }],
 //            pics: 絵の字幕 [{ num, lang, name, def, forced, cues: [{ s, e, w, h, items }] }], images: 出せない絵の字幕の数 }
 export async function extractSubs(file, onProgress) {
   const r = new Reader(file);
   let pos = 0, scale = 1e6, clusterTs = 0;
-  let tracks = null, want = new Map(), lastCue = null, images = 0;
+  let tracks = null, want = new Map(), lastCue = null, images = 0, imageNames = [];
   let lastShown = 0;
   while (pos < file.size) {
     const h = await head(r, pos);
@@ -261,7 +343,8 @@ export async function extractSubs(file, onProgress) {
         for (const t of tracks) {
           if (TEXT_CODECS.includes(t.codec)) want.set(t.num, Object.assign(t, { ass: t.codec !== 'S_TEXT/UTF8', cues: [] }));
           else if (t.codec === 'S_HDMV/PGS') want.set(t.num, Object.assign(t, { pgs: new Pgs() }));
-          else if (/^S_(HDMV|VOBSUB|DVBSUB|IMAGE)/.test(t.codec)) images++;
+          else if (t.codec === 'S_VOBSUB') want.set(t.num, Object.assign(t, { pgs: new VobSub(t.priv) }));
+          else if (/^S_(HDMV|VOBSUB|DVBSUB|IMAGE)/.test(t.codec)) { images++; imageNames.push(t.codec); }
         }
       }
     } else if (h.id === ID.TIME) {
@@ -303,5 +386,5 @@ export async function extractSubs(file, onProgress) {
     t.cues.forEach((c, i) => { if (c.e <= c.s) c.e = Math.min(c.s + 5, i + 1 < t.cues.length ? t.cues[i + 1].s : c.s + 5); });
     if (t.cues.length) subs.push({ num: t.num, lang: t.lang, name: t.name, def: t.def, forced: t.forced, cues: t.cues });
   }
-  return { subs, pics, images };
+  return { subs, pics, images, imageNames };
 }
