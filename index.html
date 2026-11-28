@@ -107,7 +107,7 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
   <div id="skipMark" class="skipmark" hidden></div>
   <div id="volMark" class="volmark" hidden>
     <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
-    <div class="vbar"><i id="volFill"></i></div>
+    <div class="vbar"><i id="volFill"></i><i id="volBoost" class="vboost"></i></div>
     <span id="volNum"></span>
   </div>
   <div id="miniBar" class="minibar" aria-hidden="true"><i id="miniFill"></i></div>
@@ -181,6 +181,8 @@ Safari のままだと、しばらく使わない間に、取りこんだ動画�
       </div>
       <div class="sphead">音の聞こえ方</div>
       <div class="plist"><button id="compBtn" class="btn">小さな音を聞きやすく：オフ</button></div>
+      <div class="sphead sub2">音量ブースト（100% より大きく）</div>
+      <div id="boostList" class="splist three"></div>
     </div>
     <div id="timerPanel" class="speedpanel" hidden>
       <div class="sphead">スリープタイマー（時間がきたら止める）</div>

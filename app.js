@@ -1180,6 +1180,15 @@ function buildSubPanel() {
   $('subOffVal').textContent = (subOff > 0 ? '＋' : subOff < 0 ? '−' : '') + Math.abs(subOff).toFixed(1) + '秒' + (subOff > 0 ? '（おそく）' : subOff < 0 ? '（はやく）' : '');
   $('compBtn').textContent = '小さな音を聞きやすく：' + (comp ? 'オン' : 'オフ');
   $('compBtn').className = 'btn' + (comp ? ' primary' : '');
+  const bl = $('boostList');
+  bl.textContent = '';
+  for (const [m, label] of [[1, 'なし'], [2, '200%'], [3, '300%']]) {
+    const b = document.createElement('button');
+    b.className = 'btn' + (boostMax === m ? ' primary' : '');
+    b.textContent = label;
+    b.onclick = (ev) => { ev.stopPropagation(); setBoostMax(m); buildSubPanel(); flashMark('音量ブースト：' + (m === 1 ? 'なし' : '最大 ' + label)); };
+    bl.appendChild(b);
+  }
   const at = audioTracks();
   $('audioBox').hidden = !at.length && !pcAud;
   const al = $('audioList');
@@ -1457,9 +1466,31 @@ $('bmPanel').addEventListener('click', (ev) => ev.stopPropagation());
 // iPad・iPhone の Safari は、ページから動画の音量（video.volume）を変えられない（いつも最大のまま）
 // そこで、動画の音を「音の通り道」（Web Audio）に通し、とちゅうの音量つまみ（gain）で小さくする
 // 100% が iPad 本体の音量と同じ大きさ。本体の音量ボタンも、いつもどおり使える
+// 音量ブースト：100% より上（上限は 200% か 300%、mp_boostmax）にもできる。音が割れないよう、大きくしたときだけ「おさえ」（limiter）を通す
+let boostMax = loadJson('mp_boostmax', 2);
+if (![1, 2, 3].includes(boostMax)) boostMax = 2;
 let vol = loadJson('mp_vol', 1);
-if (!(vol >= 0 && vol <= 1)) vol = 1;
-let actx = null, gainNode = null, srcNode = null, compNode = null, makeupNode = null;
+if (!(vol >= 0 && vol <= 3)) vol = 1;
+vol = Math.min(vol, boostMax);
+let actx = null, gainNode = null, srcNode = null, compNode = null, makeupNode = null, limNode = null, limOn = false;
+function routeOut() {   // 音量つまみ → (100% より上なら おさえ) → スピーカー
+  if (!gainNode) return;
+  const want = vol > 1;
+  if (want === limOn) return;
+  try {
+    gainNode.disconnect();
+    if (want) {
+      if (!limNode) {
+        limNode = actx.createDynamicsCompressor();
+        limNode.threshold.value = -2; limNode.knee.value = 0; limNode.ratio.value = 20;
+        limNode.attack.value = 0.002; limNode.release.value = 0.15;
+        limNode.connect(actx.destination);
+      }
+      gainNode.connect(limNode);
+    } else gainNode.connect(actx.destination);
+    limOn = want;
+  } catch (e) { }
+}
 // 小さな音を聞きやすく：大きい音をおさえ、全体を持ち上げる（音の通り道に「圧縮」の部品をはさむ）
 let comp = !!loadJson('mp_comp', false);
 function routeAudio() {
@@ -1486,7 +1517,7 @@ function setComp(on) {
 }
 function ensureAudio() {   // 指で操作したとき（再生ボタンなど）に呼ぶ。iPad は、そのときでないと音を出す準備ができない
   if (actx) { if (actx.state !== 'running') actx.resume().catch(() => { }); return; }
-  if (vol >= 1 && !comp && !ensureAudio.need) return;   // 音量も聞こえ方も変えていなければ、ふつうのまま再生する（いちばん安全）
+  if (vol === 1 && !comp && !ensureAudio.need) return;   // 音量も聞こえ方も変えていなければ、ふつうのまま再生する（いちばん安全）
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   try {
@@ -1496,23 +1527,30 @@ function ensureAudio() {   // 指で操作したとき（再生ボタンなど�
     gainNode = actx.createGain();
     gainNode.gain.value = vol;
     srcNode = actx.createMediaElementSource(video);
-    gainNode.connect(actx.destination);
+    gainNode.connect(actx.destination); limOn = false;
+    routeOut();
     routeAudio();
     if (actx.state !== 'running') actx.resume().catch(() => { });
   } catch (e) { actx = null; gainNode = null; srcNode = null; }
 }
 function setVol(v, show) {
-  vol = Math.max(0, Math.min(1, Math.round(v * 100) / 100));
+  vol = Math.max(0, Math.min(boostMax, Math.round(v * 100) / 100));
   saveJson('mp_vol', vol);
   ensureAudio.need = true;
   ensureAudio();
-  if (gainNode) gainNode.gain.setTargetAtTime(vol, actx.currentTime, 0.02);
-  else video.volume = vol;   // Web Audio が使えないブラウザ（iPad では効かない）
+  if (gainNode) { routeOut(); gainNode.gain.setTargetAtTime(vol, actx.currentTime, 0.02); }
+  else video.volume = Math.min(1, vol);   // Web Audio が使えないブラウザ（iPad では効かない）
   if (show) showVol();
+}
+function setBoostMax(m) {
+  boostMax = m; saveJson('mp_boostmax', m);
+  if (vol > m) setVol(m, false);
 }
 function showVol() {
   const pct = Math.round(vol * 100);
-  $('volFill').style.height = pct + '%';
+  $('volFill').style.height = Math.min(100, pct) + '%';
+  $('volBoost').style.height = (vol > 1 ? (vol - 1) / (boostMax - 1) * 100 : 0) + '%';
+  $('volMark').classList.toggle('boost', vol > 1);
   $('volNum').textContent = pct === 0 ? '消音' : pct + '%';
   $('volMark').hidden = false;
   clearTimeout(showVol.timer); showVol.timer = setTimeout(() => { $('volMark').hidden = true; }, 900);
@@ -1523,11 +1561,15 @@ for (const n of ['touchend', 'click']) $('player').addEventListener(n, () => { i
 document.addEventListener('visibilitychange', () => { if (!document.hidden && actx && actx.state !== 'running') actx.resume().catch(() => { }); });
 
 // 1本の指で上へなぞると音量を上げ、下へなぞると下げる（画面のどこでもよい）。画面の高さの半分で 0%→100%
+// 100% のところで少し止まる（うっかりブーストにならないように）。そのまま上へなぞると 100% より大きくなる
+const VOL_STOP = 0.12;
+function posToVol(p) { return p <= 1 ? p : p <= 1 + VOL_STOP ? 1 : p - VOL_STOP; }
+function volToPos(v) { return v < 1 ? v : v === 1 ? 1 : v + VOL_STOP; }
 let vs = null, volSwipeEnd = 0;
 $('stage').addEventListener('touchstart', (ev) => {
   if (ev.touches.length !== 1) { vs = null; return; }
   const t = ev.touches[0];
-  vs = { x: t.clientX, y: t.clientY, v: vol, on: false };
+  vs = { x: t.clientX, y: t.clientY, v: volToPos(vol), on: false };
 }, { passive: true });
 $('stage').addEventListener('touchmove', (ev) => {
   if (!vs) return;
@@ -1539,7 +1581,7 @@ $('stage').addEventListener('touchmove', (ev) => {
     vs.on = true; vs.y = t.clientY;
   }
   ev.preventDefault();
-  setVol(vs.v - (t.clientY - vs.y) / (window.innerHeight * 0.5), true);
+  setVol(posToVol(vs.v - (t.clientY - vs.y) / (window.innerHeight * 0.5)), true);
 }, { passive: false });
 $('stage').addEventListener('touchend', () => { if (vs && vs.on) volSwipeEnd = Date.now(); vs = null; });
 $('stage').addEventListener('touchcancel', () => { if (vs && vs.on) volSwipeEnd = Date.now(); vs = null; });
@@ -1547,15 +1589,21 @@ $('stage').addEventListener('touchcancel', () => { if (vs && vs.on) volSwipeEnd 
 $('player').addEventListener('wheel', (ev) => {
   if ($('player').hidden || panelOpen() || locked) return;
   ev.preventDefault();
-  setVol(vol + (ev.deltaY < 0 ? 0.05 : -0.05), true);
+  stepVol(ev.deltaY < 0 ? 0.05 : -0.05);
 }, { passive: false });
+// ホイールや ↑ ↓ で 100% をまたぐときは、いったん 100% で止める
+function stepVol(d) {
+  let v = Math.round((vol + d) * 100) / 100;
+  if ((vol < 1 && v > 1) || (vol > 1 && v < 1)) v = 1;
+  setVol(v, true);
+}
 
 // Windows：スペースで再生／一時停止、← → で10秒もどる／すすむ、↑ ↓ で音量、Esc で棚へ
 document.addEventListener('keydown', (ev) => {
   if ($('player').hidden || locked) return;
   if (!$('helpDlg').hidden) { if (ev.key === 'Escape' || ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); closeHelp(); } return; }
-  if (ev.key === 'ArrowUp') { ev.preventDefault(); setVol(vol + 0.05, true); return; }
-  if (ev.key === 'ArrowDown') { ev.preventDefault(); setVol(vol - 0.05, true); return; }
+  if (ev.key === 'ArrowUp') { ev.preventDefault(); stepVol(0.05); return; }
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); stepVol(-0.05); return; }
   if (ev.key === ' ') { ev.preventDefault(); togglePlay(); }
   else if (ev.key === 'ArrowLeft') { ev.preventDefault(); skip(-10); showCtl(); }
   else if (ev.key === 'ArrowRight') { ev.preventDefault(); skip(10); showCtl(); }

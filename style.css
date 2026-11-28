@@ -81,6 +81,9 @@ body { -webkit-text-size-adjust: 100%; user-select: none; -webkit-user-select: n
 .volmark .ic { width: 22px; height: 22px; }
 .vbar { width: 8px; height: 160px; background: rgba(255,255,255,.25); border-radius: 4px; position: relative; overflow: hidden; }
 .vbar i { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; border-radius: 4px; }
+.vbar i.vboost { background: #f59e0b; height: 0; }
+.volmark.boost #volNum { color: #fbbf24; font-weight: 600; }
+.sphead.sub2 { margin-top: 12px; }
 .speedpanel { position: absolute; right: max(16px, env(safe-area-inset-right)); top: calc(max(10px, calc(env(safe-area-inset-top) + var(--topx))) + 52px);
   background: rgba(17,24,39,.95); border: 1px solid var(--line); border-radius: 12px; padding: 12px; width: min(320px, calc(100vw - 32px)); z-index: 6; }
 .sphead { font-size: 14px; color: var(--sub); margin-bottom: 8px; }
